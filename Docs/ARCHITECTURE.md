@@ -1,87 +1,154 @@
-# 忙碌不迷路藝術工作坊 (Find the Way Art) - 網站架構與技術文件
+# 忙碌不迷路藝術工作坊 (Find the Way Art) — 專案架構文件
 
-本文件記錄了「忙碌不迷路藝術工作坊」官方網站的頁面架構、專案目錄結構以及核心技術選型。
+本文件記錄整套系統的入口架構、目錄結構與技術選型。
 
-## 1. 網站頁面架構圖 (Sitemap)
+---
 
-以下是網站的導覽與內容架構：
+## 1. 系統入口總覽
 
-```mermaid
-graph TD
-    A[首頁 Home /] --> B(關於我們 About)
-    A --> C(服務項目 Services)
-    A --> D(作品集 Work)
-    A --> E(聯絡我們 Contact)
-    
-    B --> B1[品牌願景 Vision]
-    B --> B2[核心價值 Values]
-    
-    C --> C1[藝術體驗與工作坊]
-    C --> C2[客製化藝術委託]
-    C --> C3[策展與跨界企劃]
-    C --> C4[服務流程 Process]
-    
-    D -.尚未實作.-> D1[畫作分類呈現]
-    E -.尚未實作.-> E1[聯絡表單與資訊]
+| 入口 | 路徑 | 裝置 | 說明 |
+|------|------|------|------|
+| 品牌官網 | `/` | 桌面 / 手機 | 展示用品牌網站 |
+| 學員專區 | `/m` | Mobile-first | 會員購券、報名、查訂單 |
+| 教師專區 | `/m/teacher` | Mobile-first | 教師行事曆、點名、請假 |
+| 管理後台 | `/sys-admin` | 桌面優先 | 課程、學員、財務全功能後台 |
 
-    style A fill:#000,stroke:#000,color:#fff
-    style B fill:#f2f2f2,stroke:#ccc
-    style C fill:#f2f2f2,stroke:#ccc
-```
+---
 
-### 網站內容層級圖 (Tree Structure)
+## 2. 完整 Sitemap
 
-以樹狀圖的結構呈現，能更清楚對應每個分頁的階層關係：
+### 品牌官網 `/`
 
 ```text
-Find the Way Art 網站
-├── 首頁 Home
-│   ├── 關於我們 About
-│   │   ├── 品牌願景 Vision
-│   │   └── 核心價值 Values
-│   ├── 服務項目 Services
-│   │   ├── 藝術體驗與工作坊
-│   │   ├── 客製化藝術委託
-│   │   ├── 策展與跨界企劃
-│   │   └── 服務流程 Process
-│   ├── 作品集 Work
-│   │   └── 畫作分類呈現
-│   └── 聯絡我們 Contact
-│       └── 聯絡表單與資訊
+/                首頁（Hero + 服務摘要）
+├── /about       關於我們（品牌願景、核心價值）
+└── /service     服務項目（工作坊、委託、策展、流程）
 ```
 
-## 2. 專案目錄結構 (Directory Structure)
+### 學員專區 `/m`
 
-本網站基於 **Next.js (App Router)** 開發，主要目錄與檔案配置如下：
+```text
+/m               首頁（Banner + 課程分類 + 課程卡列表）
+├── /m/courses   課程列表（分類篩選 + 大圖課程卡）
+├── /m/orders    訂單 & 課堂券（黑底餘額卡 + 報名紀錄）
+└── /m/profile   我的（Profile card + 快速操作 + 學生列表 + 選單）
+```
+
+### 教師專區 `/m/teacher`
+
+```text
+/m/teacher               行事曆（清單 / 日 / 週 / 月 四模式）
+├── /m/teacher/attendance  點名（選課程 + 學生狀態切換）
+├── /m/teacher/availability 請假管理（不可出席時段列表 + 新增表單）
+└── /m/teacher/profile     教師我的（本月統計 + 出席歷史）
+```
+
+### 管理後台 `/sys-admin`
+
+```text
+/sys-admin                總覽 Dashboard（統計卡 + 最新訂單 + 即將開課）
+├── /sys-admin/accounts   帳號管理（會員帳號 + 關聯學生）
+├── /sys-admin/students   學員管理（學生列表 + 課堂券餘額）
+├── /sys-admin/teachers   教師管理（教師列表 + 行事曆 modal）
+├── /sys-admin/courses    課程管理（課程列表 + 報名進度）
+├── /sys-admin/tickets    商品管理（課堂券組合上下架）
+├── /sys-admin/orders     訂單管理（訂單列表 + 狀態）
+├── /sys-admin/finance    帳務管理（收入統計 + 交易明細 + 日期篩選）
+├── /sys-admin/roster     出席管理（依課程分組出席名單）
+└── /sys-admin/system     系統管理（可展開群組）
+    ├── /sys-admin/system/members  人員管理（後台帳號 + 角色）
+    ├── /sys-admin/system/roles    角色管理（權限矩陣）
+    └── /sys-admin/system/params   參數管理（分組可編輯參數）
+```
+
+---
+
+## 3. 專案目錄結構
 
 ```text
 Findtheway/
-├── package.json          # 專案套件設定檔 (包含 next, framer-motion, react-icons 等)
-├── tailwind.config.ts    # Tailwind CSS 設定檔
+├── Docs/
+│   ├── ARCHITECTURE.md      # 本文件
+│   └── class-system.md      # 系統規劃與功能文件
 ├── src/
 │   └── app/
-│       ├── globals.css   # 全域樣式 (設定字體變數、SVG雜訊濾鏡、基礎顏色)
-│       ├── layout.tsx    # 全域佈局 (引入 Inter 與 Playfair Display 字體)
-│       ├── page.tsx      # 首頁 (Hero Section, 雜訊背景, 膠囊按鈕, 精簡版服務列表)
-│       ├── about/
-│       │   └── page.tsx  # 關於我們內頁 (品牌理念與核心價值)
-│       └── service/
-│           └── page.tsx  # 服務項目內頁 (詳細服務條列與四步驟流程)
-└── public/               # 靜態資源資料夾 (供放置圖片、logo 等)
+│       ├── globals.css
+│       ├── layout.tsx
+│       ├── page.tsx                    # 品牌首頁
+│       ├── about/page.tsx
+│       ├── service/page.tsx
+│       │
+│       ├── m/                          # 學員專區
+│       │   ├── layout.tsx              # 含 MobileNav（/m/teacher 路徑下自動隱藏）
+│       │   ├── page.tsx
+│       │   ├── courses/page.tsx
+│       │   ├── orders/page.tsx
+│       │   ├── profile/page.tsx
+│       │   ├── components/
+│       │   │   └── MobileNav.tsx
+│       │   └── teacher/                # 教師專區
+│       │       ├── layout.tsx          # 含 AvailabilityProvider + TeacherNav
+│       │       ├── page.tsx            # 行事曆（清單/日/週/月）
+│       │       ├── attendance/page.tsx
+│       │       ├── availability/page.tsx
+│       │       ├── profile/page.tsx
+│       │       ├── components/
+│       │       │   └── TeacherNav.tsx
+│       │       └── context/
+│       │           └── AvailabilityProvider.tsx
+│       │
+│       └── sys-admin/                  # 管理後台
+│           ├── layout.tsx              # Sidebar + main
+│           ├── page.tsx                # Dashboard
+│           ├── accounts/page.tsx
+│           ├── students/page.tsx
+│           ├── teachers/page.tsx       # 含行事曆 modal（client component）
+│           ├── courses/page.tsx
+│           ├── tickets/page.tsx
+│           ├── orders/page.tsx
+│           ├── finance/page.tsx        # 含日期篩選（client component）
+│           ├── roster/page.tsx
+│           ├── system/
+│           │   ├── members/page.tsx
+│           │   ├── roles/page.tsx
+│           │   └── params/page.tsx
+│           └── components/
+│               └── AdminNav.tsx        # 響應式側欄 + 系統管理可展開群組
+└── public/
 ```
 
-## 3. 設計語彙與美學 (Design System)
+---
 
-為了還原極簡、高級的畫廊質感，本網站採用了以下設計規範：
+## 4. 技術選型
 
-*   **顏色 (Color Palette):** 
-    *   主背景: 純白 `#ffffff`
-    *   次背景 (如首頁與About區塊): 極淺灰 `#f2f2f2`
-    *   文字與線條: 純黑 `#000000` 或半透明黑 (`black/40`, `black/60`)
-*   **字體 (Typography):**
-    *   英文標題/導覽列: 幾何無襯線體 (Inter, Helvetica), 大字距全小寫設計。
-    *   中文標題與重點文字: 現代襯線體 (Playfair Display, Noto Serif TC)。
-*   **視覺特效 (Effects):**
-    *   **SVG 雜訊濾鏡 (Noise Overlay):** 模擬紙張或底片的顆粒質感，降低數位感。
-    *   **Framer Motion:** 應用於滾動視差與淡入浮現 (`opacity`, `y`)，使瀏覽體驗如呼吸般平穩。
-    *   **圓弧分隔線 (Curved SVG Divider):** 在區塊交界處使用往上的圓弧，象徵「入雲」般的輕柔感。
+| 項目 | 選用 |
+|------|------|
+| 框架 | Next.js 16 App Router |
+| 樣式 | Tailwind CSS v4（`@import "tailwindcss"` + `@theme`） |
+| 圖示 | lucide-react v1.14 |
+| 認證 / DB | Supabase（Auth + PostgreSQL） |
+| 部署 | Vercel（`csflesim` 帳號） |
+| Git | SSH alias `github-csflesim` → `~/.ssh/id_ed25519_csflesim` |
+
+---
+
+## 5. 設計規範
+
+### 色系
+
+| 用途 | 值 |
+|------|----|
+| 品牌主色 | `#000000` |
+| 頁面背景 | `#fafaf9`（學員 / 後台）|
+| 卡片背景 | `#ffffff` |
+| 邊框 | `#f0f0f0` |
+| 分隔線 | `#f5f5f5` |
+| 次要文字 | `#999` |
+| 輔助文字 | `#aaa`、`#bbb` |
+
+### Layout 規則
+
+- `/m`、`/m/teacher`：手機版，底部固定 nav（高度預留 `pb-20`）
+- `/m/teacher` 路徑下，`/m` 的 `MobileNav` 會 return null，避免雙層 nav
+- `/sys-admin`：桌面側欄（`w-52` 黑底），手機 top bar + drawer overlay
+- 後台所有頁面容器使用 `w-full`，不設 max-width
