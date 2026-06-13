@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { X, Plus } from "lucide-react"
-import { useAvailability } from "../context/AvailabilityProvider"
+import { useAvailability, type Block } from "../context/AvailabilityProvider"
 
 const HOURS = Array.from({ length: 14 }, (_, i) => {
   const h = i + 9
