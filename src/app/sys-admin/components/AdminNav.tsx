@@ -7,8 +7,15 @@ import {
   LayoutDashboard, BookOpen, Ticket,
   Users, ShoppingBag, ClipboardList,
   LogOut, Menu, X, UserCircle, GraduationCap, Wallet,
-  Settings2, UserCog, Shield, SlidersHorizontal, ChevronDown,
+  Settings2, UserCog, Shield, SlidersHorizontal, ChevronDown, Bell,
 } from "lucide-react"
+
+const MOCK_USER = {
+  name: "陳美玲",
+  role: "超級管理員",
+  initial: "陳",
+  avatarColor: "bg-indigo-500",
+}
 
 const navItems = [
   { href: "/sys-admin",           label: "總覽",     icon: LayoutDashboard },
@@ -28,13 +35,30 @@ const sysItems = [
   { href: "/sys-admin/system/params",  label: "參數管理", icon: SlidersHorizontal },
 ]
 
+function UserCard() {
+  return (
+    <div className="mx-3 mb-1 flex items-center gap-2.5 bg-white/10 rounded-xl px-3 py-2.5">
+      <div className={`w-8 h-8 ${MOCK_USER.avatarColor} rounded-full shrink-0 flex items-center justify-center text-xs text-white font-semibold`}>
+        {MOCK_USER.initial}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-white truncate">{MOCK_USER.name}</p>
+        <p className="text-[10px] text-white/50 truncate">{MOCK_USER.role}</p>
+      </div>
+      <button className="relative shrink-0 text-white/40 hover:text-white transition-colors">
+        <Bell size={15} strokeWidth={1.5} />
+      </button>
+    </div>
+  )
+}
+
 function NavLinks({ onClose }: { onClose?: () => void }) {
   const pathname = usePathname()
   const sysActive = sysItems.some(i => pathname.startsWith(i.href))
   const [sysOpen, setSysOpen] = useState(sysActive)
 
   return (
-    <nav className="flex-1 px-3 py-4 flex flex-col gap-0.5 overflow-y-auto">
+    <nav className="flex-1 px-3 py-3 flex flex-col gap-0.5 overflow-y-auto">
       {navItems.map(({ href, label, icon: Icon }) => {
         const active = pathname === href
         return (
@@ -99,9 +123,14 @@ export default function AdminNav() {
     <>
       {/* ── Desktop sidebar ─────────────────────── */}
       <aside className="hidden lg:flex flex-col w-52 min-h-screen bg-black text-white shrink-0">
-        <div className="px-5 py-5 border-b border-white/10">
+        {/* Brand */}
+        <div className="px-5 py-4 border-b border-white/10">
           <p className="text-[10px] text-white/40 uppercase tracking-widest">Find the Way</p>
           <p className="text-sm font-medium mt-0.5">管理後台</p>
+        </div>
+        {/* User card */}
+        <div className="pt-3 pb-1">
+          <UserCard />
         </div>
         <NavLinks />
         <div className="px-3 py-4 border-t border-white/10">
@@ -116,7 +145,15 @@ export default function AdminNav() {
         <button onClick={() => setOpen(true)} className="p-1 mr-3">
           <Menu size={20} />
         </button>
-        <p className="text-sm font-medium">管理後台</p>
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <div className={`w-6 h-6 ${MOCK_USER.avatarColor} rounded-full shrink-0 flex items-center justify-center text-[10px] text-white font-semibold`}>
+            {MOCK_USER.initial}
+          </div>
+          <p className="text-sm font-medium truncate">{MOCK_USER.name}</p>
+        </div>
+        <button className="text-white/50 hover:text-white p-1">
+          <Bell size={18} strokeWidth={1.5} />
+        </button>
       </header>
 
       {/* ── Mobile drawer overlay ───────────────── */}
@@ -124,7 +161,8 @@ export default function AdminNav() {
         <div className="lg:hidden fixed inset-0 z-50 flex">
           <div className="absolute inset-0 bg-black/50" onClick={() => setOpen(false)} />
           <aside className="relative w-64 bg-black text-white flex flex-col h-full shadow-2xl">
-            <div className="px-5 py-5 border-b border-white/10 flex items-center justify-between">
+            {/* Brand */}
+            <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between">
               <div>
                 <p className="text-[10px] text-white/40 uppercase tracking-widest">Find the Way</p>
                 <p className="text-sm font-medium mt-0.5">管理後台</p>
@@ -132,6 +170,10 @@ export default function AdminNav() {
               <button onClick={() => setOpen(false)} className="text-white/40 hover:text-white">
                 <X size={18} />
               </button>
+            </div>
+            {/* User card */}
+            <div className="pt-3 pb-1">
+              <UserCard />
             </div>
             <NavLinks onClose={() => setOpen(false)} />
             <div className="px-3 py-4 border-t border-white/10">
