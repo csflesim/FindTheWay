@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation"
 import {
   LayoutDashboard, BookOpen, Ticket,
   Users, ShoppingBag, ClipboardList,
-  LogOut, Menu, X, UserCircle, GraduationCap,
+  LogOut, Menu, X, UserCircle, GraduationCap, Wallet,
 } from "lucide-react"
 
 const navItems = [
@@ -17,6 +17,7 @@ const navItems = [
   { href: "/sys-admin/courses",   label: "課程管理", icon: BookOpen        },
   { href: "/sys-admin/tickets",   label: "商品管理", icon: Ticket          },
   { href: "/sys-admin/orders",    label: "訂單管理", icon: ShoppingBag     },
+  { href: "/sys-admin/finance",   label: "帳務管理", icon: Wallet          },
   { href: "/sys-admin/roster",    label: "出席管理", icon: ClipboardList   },
 ]
 
