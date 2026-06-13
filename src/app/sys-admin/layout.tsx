@@ -9,7 +9,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <div className="flex min-h-screen bg-[#f7f7f6]">
       <AdminNav />
-      <main className="flex-1 pb-20 md:pb-0 overflow-auto">
+      <main className="flex-1 overflow-auto pt-12 lg:pt-0">
         {children}
       </main>
     </div>
