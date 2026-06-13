@@ -7,6 +7,7 @@ import {
   LayoutDashboard, BookOpen, Ticket,
   Users, ShoppingBag, ClipboardList,
   LogOut, Menu, X, UserCircle, GraduationCap, Wallet,
+  Settings2, UserCog, Shield, SlidersHorizontal, ChevronDown,
 } from "lucide-react"
 
 const navItems = [
@@ -21,10 +22,19 @@ const navItems = [
   { href: "/sys-admin/roster",    label: "出席管理", icon: ClipboardList   },
 ]
 
+const sysItems = [
+  { href: "/sys-admin/system/members", label: "人員管理", icon: UserCog           },
+  { href: "/sys-admin/system/roles",   label: "角色管理", icon: Shield            },
+  { href: "/sys-admin/system/params",  label: "參數管理", icon: SlidersHorizontal },
+]
+
 function NavLinks({ onClose }: { onClose?: () => void }) {
   const pathname = usePathname()
+  const sysActive = sysItems.some(i => pathname.startsWith(i.href))
+  const [sysOpen, setSysOpen] = useState(sysActive)
+
   return (
-    <nav className="flex-1 px-3 py-4 flex flex-col gap-0.5">
+    <nav className="flex-1 px-3 py-4 flex flex-col gap-0.5 overflow-y-auto">
       {navItems.map(({ href, label, icon: Icon }) => {
         const active = pathname === href
         return (
@@ -39,6 +49,45 @@ function NavLinks({ onClose }: { onClose?: () => void }) {
           </Link>
         )
       })}
+
+      {/* Divider */}
+      <div className="my-2 border-t border-white/10" />
+
+      {/* System group */}
+      <button
+        onClick={() => setSysOpen(v => !v)}
+        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors w-full text-left ${
+          sysActive
+            ? "text-white"
+            : "text-white/60 hover:text-white hover:bg-white/10"
+        }`}
+      >
+        <Settings2 size={16} strokeWidth={1.5} />
+        <span className="flex-1">系統管理</span>
+        <ChevronDown
+          size={14}
+          className={`transition-transform duration-200 ${sysOpen ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {sysOpen && (
+        <div className="flex flex-col gap-0.5 pl-2">
+          {sysItems.map(({ href, label, icon: Icon }) => {
+            const active = pathname === href
+            return (
+              <Link key={href} href={href} onClick={onClose}
+                className={`flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg text-sm transition-colors ${
+                  active
+                    ? "bg-white text-black font-medium"
+                    : "text-white/50 hover:text-white hover:bg-white/10"
+                }`}>
+                <Icon size={14} strokeWidth={active ? 2 : 1.5} />
+                {label}
+              </Link>
+            )
+          })}
+        </div>
+      )}
     </nav>
   )
 }
