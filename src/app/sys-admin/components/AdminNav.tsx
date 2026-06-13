@@ -6,16 +6,18 @@ import { usePathname } from "next/navigation"
 import {
   LayoutDashboard, BookOpen, Ticket,
   Users, ShoppingBag, ClipboardList,
-  LogOut, Menu, X,
+  LogOut, Menu, X, UserCircle, GraduationCap,
 } from "lucide-react"
 
 const navItems = [
-  { href: "/sys-admin",          label: "總覽",     icon: LayoutDashboard },
-  { href: "/sys-admin/courses",  label: "課程管理", icon: BookOpen        },
-  { href: "/sys-admin/tickets",  label: "課堂券",   icon: Ticket          },
-  { href: "/sys-admin/orders",   label: "訂單",     icon: ShoppingBag     },
-  { href: "/sys-admin/students", label: "學員",     icon: Users           },
-  { href: "/sys-admin/roster",   label: "出席管理", icon: ClipboardList   },
+  { href: "/sys-admin",           label: "總覽",     icon: LayoutDashboard },
+  { href: "/sys-admin/accounts",  label: "帳號管理", icon: UserCircle      },
+  { href: "/sys-admin/students",  label: "學員管理", icon: Users           },
+  { href: "/sys-admin/teachers",  label: "教師管理", icon: GraduationCap   },
+  { href: "/sys-admin/courses",   label: "課程管理", icon: BookOpen        },
+  { href: "/sys-admin/tickets",   label: "商品管理", icon: Ticket          },
+  { href: "/sys-admin/orders",    label: "訂單管理", icon: ShoppingBag     },
+  { href: "/sys-admin/roster",    label: "出席管理", icon: ClipboardList   },
 ]
 
 function NavLinks({ onClose }: { onClose?: () => void }) {
