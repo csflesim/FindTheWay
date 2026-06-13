@@ -1,3 +1,6 @@
+'use client'
+
+import { useState } from "react"
 import { TrendingUp, TrendingDown } from "lucide-react"
 
 const monthStats = [
@@ -36,11 +39,56 @@ const statusStyle: Record<string, string> = {
 const maxAmount = Math.max(...monthlyRevenue.map(m => m.amount))
 
 export default function FinancePage() {
+  const [from, setFrom] = useState("2026-06-01")
+  const [to,   setTo]   = useState("2026-06-30")
+
+  function setThisPeriod() { setFrom("2026-06-01"); setTo("2026-06-30") }
+  function setLastPeriod()  { setFrom("2026-05-01"); setTo("2026-05-31") }
+
   return (
     <div className="p-4 md:p-6 w-full">
-      <div className="mb-5">
-        <p className="text-[11px] text-[#aaa] uppercase tracking-widest">Finance</p>
-        <h1 className="text-lg md:text-xl font-medium mt-0.5">帳務管理</h1>
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-5">
+        <div>
+          <p className="text-[11px] text-[#aaa] uppercase tracking-widest">Finance</p>
+          <h1 className="text-lg md:text-xl font-medium mt-0.5">帳務管理</h1>
+        </div>
+
+        {/* Date filter */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 bg-white border border-[#f0f0f0] rounded-xl px-3 py-2">
+            <input
+              type="date"
+              value={from}
+              onChange={e => setFrom(e.target.value)}
+              className="text-sm text-[#333] outline-none bg-transparent w-[120px]"
+            />
+          </div>
+          <span className="text-[#bbb] text-sm">～</span>
+          <div className="flex items-center gap-1.5 bg-white border border-[#f0f0f0] rounded-xl px-3 py-2">
+            <input
+              type="date"
+              value={to}
+              onChange={e => setTo(e.target.value)}
+              className="text-sm text-[#333] outline-none bg-transparent w-[120px]"
+            />
+          </div>
+          <button
+            onClick={setThisPeriod}
+            className="px-3 py-2 text-sm bg-white border border-[#f0f0f0] rounded-xl text-[#666] hover:border-black hover:text-black transition-colors"
+          >
+            本期
+          </button>
+          <button
+            onClick={setLastPeriod}
+            className="px-3 py-2 text-sm bg-white border border-[#f0f0f0] rounded-xl text-[#666] hover:border-black hover:text-black transition-colors"
+          >
+            上期
+          </button>
+          <button className="px-4 py-2 text-sm bg-black text-white rounded-xl hover:bg-[#222] transition-colors">
+            查詢
+          </button>
+        </div>
       </div>
 
       {/* Stats */}
