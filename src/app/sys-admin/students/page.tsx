@@ -1,12 +1,10 @@
 import { Search, Plus } from "lucide-react"
 
 const students = [
-  { id: 1, name: "陳小明",  age: 9,  account: "陳媽媽",       tickets: 7,  courses: ["基礎水彩入門"],                 lastActive: "06/13" },
-  { id: 2, name: "林小華",  age: 7,  account: "林美玲",       tickets: 1,  courses: ["兒童創意素描"],                 lastActive: "06/12" },
-  { id: 3, name: "王大文",  age: 10, account: "王大文家長",    tickets: 8,  courses: ["基礎水彩入門", "水墨入門體驗"], lastActive: "06/11" },
-  { id: 4, name: "張雅婷",  age: 28, account: "張雅婷（本人）", tickets: 3, courses: ["成人油畫工作坊"],              lastActive: "06/10" },
-  { id: 5, name: "吳小朋",  age: 6,  account: "吳媽媽",       tickets: 0,  courses: ["親子藝術探索"],                 lastActive: "06/09" },
-  { id: 6, name: "劉建宏",  age: 9,  account: "劉建宏家長",    tickets: 15, courses: ["基礎水彩入門", "兒童創意素描"], lastActive: "06/08" },
+  { id: 1, name: "鄭小德", age: 10, account: "鄭大德", tickets: 7,  courses: ["基礎水彩入門", "水墨入門體驗"], lastActive: "06/13" },
+  { id: 2, name: "鄭小明", age: 8,  account: "鄭大德", tickets: 3,  courses: ["兒童創意素描"],                 lastActive: "06/12" },
+  { id: 3, name: "賴小柏", age: 7,  account: "賴大紫", tickets: 5,  courses: ["親子藝術探索"],                 lastActive: "06/11" },
+  { id: 4, name: "賴小紫", age: 6,  account: "賴大紫", tickets: 0,  courses: ["兒童創意素描"],                 lastActive: "06/10" },
 ]
 
 export default function StudentsPage() {

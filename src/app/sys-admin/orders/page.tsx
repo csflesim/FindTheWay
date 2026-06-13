@@ -1,12 +1,12 @@
 import { Search } from "lucide-react"
 
 const orders = [
-  { id: "ORD-0041", student: "陳小明家長", email: "chen@email.com",  item: "10堂體驗包", amount: 9800,  date: "06/13", status: "已付款" },
-  { id: "ORD-0040", student: "林美玲",     email: "lin@email.com",   item: "單堂試課券", amount: 1200,  date: "06/12", status: "已付款" },
-  { id: "ORD-0039", student: "王大文家長", email: "wang@email.com",  item: "10堂體驗包", amount: 9800,  date: "06/11", status: "已付款" },
-  { id: "ORD-0038", student: "張志豪",     email: "chang@email.com", item: "5堂精選包",  amount: 5500,  date: "06/10", status: "待確認" },
-  { id: "ORD-0037", student: "吳雅婷",     email: "wu@email.com",    item: "10堂體驗包", amount: 9800,  date: "06/09", status: "已付款" },
-  { id: "ORD-0036", student: "劉建宏家長", email: "liu@email.com",   item: "20堂年繳包", amount: 18000, date: "06/08", status: "已退款" },
+  { id: "ORD-0041", student: "鄭大德", email: "zheng@email.com", item: "10堂體驗包", amount:  9800, date: "06/13", status: "已付款" },
+  { id: "ORD-0040", student: "賴大紫", email: "lai@email.com",   item: "5堂精選包",  amount:  5500, date: "06/12", status: "已付款" },
+  { id: "ORD-0039", student: "鄭大德", email: "zheng@email.com", item: "單堂試課券", amount:  1200, date: "06/10", status: "已付款" },
+  { id: "ORD-0038", student: "賴大紫", email: "lai@email.com",   item: "10堂體驗包", amount:  9800, date: "06/09", status: "待確認" },
+  { id: "ORD-0037", student: "鄭大德", email: "zheng@email.com", item: "10堂體驗包", amount:  9800, date: "06/05", status: "已付款" },
+  { id: "ORD-0036", student: "賴大紫", email: "lai@email.com",   item: "20堂年繳包", amount: 18000, date: "06/01", status: "已退款" },
 ]
 
 const statusStyle: Record<string, string> = {

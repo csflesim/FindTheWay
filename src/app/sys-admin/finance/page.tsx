@@ -58,14 +58,12 @@ const monthlyRevenue = [
 ]
 
 const transactions = [
-  { id: "ORD-0041", date: "06/13", type: "收入", item: "10堂體驗包", student: "陳小明家長", amount:   9800, status: "已入帳" },
-  { id: "ORD-0040", date: "06/12", type: "收入", item: "單堂試課券", student: "林美玲",     amount:   1200, status: "已入帳" },
-  { id: "ORD-0039", date: "06/11", type: "收入", item: "10堂體驗包", student: "王大文家長", amount:   9800, status: "已入帳" },
-  { id: "ORD-0038", date: "06/10", type: "收入", item: "5堂精選包",  student: "張志豪",     amount:   5500, status: "待確認" },
-  { id: "ORD-0037", date: "06/09", type: "收入", item: "10堂體驗包", student: "吳雅婷",     amount:   9800, status: "已入帳" },
-  { id: "ORD-0036", date: "06/08", type: "退款", item: "20堂年繳包", student: "劉建宏家長", amount: -18000, status: "已退款" },
-  { id: "ORD-0035", date: "06/07", type: "收入", item: "5堂精選包",  student: "許小芸",     amount:   5500, status: "已入帳" },
-  { id: "ORD-0034", date: "06/05", type: "收入", item: "10堂體驗包", student: "黃志明",     amount:   9800, status: "已入帳" },
+  { id: "ORD-0041", date: "06/13", type: "收入", item: "10堂體驗包", student: "鄭大德", amount:   9800, status: "已入帳" },
+  { id: "ORD-0040", date: "06/12", type: "收入", item: "5堂精選包",  student: "賴大紫", amount:   5500, status: "已入帳" },
+  { id: "ORD-0039", date: "06/10", type: "收入", item: "單堂試課券", student: "鄭大德", amount:   1200, status: "已入帳" },
+  { id: "ORD-0038", date: "06/09", type: "收入", item: "10堂體驗包", student: "賴大紫", amount:   9800, status: "待確認" },
+  { id: "ORD-0037", date: "06/05", type: "收入", item: "10堂體驗包", student: "鄭大德", amount:   9800, status: "已入帳" },
+  { id: "ORD-0036", date: "06/01", type: "退款", item: "20堂年繳包", student: "賴大紫", amount: -18000, status: "已退款" },
 ]
 
 const statusStyle: Record<string, string> = {

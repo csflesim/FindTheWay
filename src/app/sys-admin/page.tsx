@@ -8,16 +8,16 @@ const stats = [
 ]
 
 const recentOrders = [
-  { id: "ORD-0041", student: "陳小明家長", item: "10堂體驗包", amount: 9800,  date: "06/13", status: "已付款" },
-  { id: "ORD-0040", student: "林美玲",     item: "單堂試課券", amount: 1200,  date: "06/12", status: "已付款" },
-  { id: "ORD-0039", student: "王大文家長", item: "10堂體驗包", amount: 9800,  date: "06/11", status: "已付款" },
-  { id: "ORD-0038", student: "張志豪",     item: "5堂精選包",  amount: 5500,  date: "06/10", status: "待確認" },
+  { id: "ORD-0041", student: "鄭大德", item: "10堂體驗包", amount: 9800, date: "06/13", status: "已付款" },
+  { id: "ORD-0040", student: "賴大紫", item: "5堂精選包",  amount: 5500, date: "06/12", status: "已付款" },
+  { id: "ORD-0039", student: "鄭大德", item: "單堂試課券", amount: 1200, date: "06/10", status: "已付款" },
+  { id: "ORD-0038", student: "賴大紫", item: "10堂體驗包", amount: 9800, date: "06/09", status: "待確認" },
 ]
 
 const upcomingCourses = [
-  { title: "基礎水彩入門",  date: "06/14 週六", time: "10:00–12:00", enrolled: 8,  capacity: 10 },
-  { title: "成人油畫工作坊", date: "06/14 週六", time: "19:00–21:00", enrolled: 6,  capacity: 8  },
-  { title: "兒童創意素描",  date: "06/15 週日", time: "14:00–15:30", enrolled: 9,  capacity: 10 },
+  { title: "兒童創意素描",  date: "06/14 週六", time: "14:00–15:30", enrolled: 4, capacity: 8  },
+  { title: "親子藝術探索",  date: "06/15 週日", time: "14:00–15:30", enrolled: 3, capacity: 8  },
+  { title: "基礎水彩入門",  date: "06/20 週六", time: "10:00–12:00", enrolled: 4, capacity: 8  },
 ]
 
 const statusStyle: Record<string, string> = {

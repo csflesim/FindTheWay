@@ -1,10 +1,7 @@
 import { Search, Plus } from "lucide-react"
 
 const members = [
-  { id: 1, name: "陳美玲", email: "admin@findtheway.com",  role: "超級管理員", lastLogin: "2026/06/13 14:32", status: "啟用" },
-  { id: 2, name: "林志偉", email: "lin@findtheway.com",    role: "課務管理員", lastLogin: "2026/06/13 09:18", status: "啟用" },
-  { id: 3, name: "張雅婷", email: "zhang@findtheway.com",  role: "財務管理員", lastLogin: "2026/06/12 17:05", status: "啟用" },
-  { id: 4, name: "王建宏", email: "wang@findtheway.com",   role: "課務管理員", lastLogin: "2026/06/10 11:44", status: "停用" },
+  { id: 1, name: "鄭明德", email: "admin@findtheway.com",   role: "超級管理員", lastLogin: "2026/06/13 14:32", status: "啟用" },
 ]
 
 const roleColor: Record<string, string> = {

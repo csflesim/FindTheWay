@@ -1,12 +1,8 @@
 import { Search, Plus } from "lucide-react"
 
 const accounts = [
-  { id: 1, name: "陳媽媽",       email: "chen@email.com",  phone: "0912-345-678", students: ["陳小明"],             joined: "2024/09", status: "正常" },
-  { id: 2, name: "林美玲",       email: "lin@email.com",   phone: "0923-456-789", students: ["林小華"],             joined: "2024/10", status: "正常" },
-  { id: 3, name: "王大文家長",   email: "wang@email.com",  phone: "0934-567-890", students: ["王大文"],             joined: "2024/11", status: "正常" },
-  { id: 4, name: "張雅婷",       email: "chang@email.com", phone: "0945-678-901", students: ["張雅婷"],             joined: "2025/01", status: "正常" },
-  { id: 5, name: "吳媽媽",       email: "wu@email.com",    phone: "0956-789-012", students: ["吳小朋", "吳小妹"],  joined: "2025/03", status: "正常" },
-  { id: 6, name: "劉建宏家長",   email: "liu@email.com",   phone: "0967-890-123", students: ["劉建宏"],             joined: "2025/04", status: "停用" },
+  { id: 1, name: "鄭大德", email: "zheng@email.com", phone: "0912-345-678", students: ["鄭小德", "鄭小明"], joined: "2024/09", status: "正常" },
+  { id: 2, name: "賴大紫", email: "lai@email.com",   phone: "0923-456-789", students: ["賴小柏", "賴小紫"], joined: "2024/10", status: "正常" },
 ]
 
 export default function AccountsPage() {

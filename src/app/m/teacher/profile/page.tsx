@@ -19,8 +19,8 @@ export default function TeacherProfilePage() {
           <div className="w-12 h-12 bg-white/20 rounded-full shrink-0" />
           <div>
             <p className="text-[10px] text-white/50 uppercase tracking-widest">Instructor</p>
-            <p className="text-sm font-medium mt-0.5">陳老師</p>
-            <p className="text-xs text-white/50">teacher@findtheway.com</p>
+            <p className="text-sm font-medium mt-0.5">明德老師</p>
+            <p className="text-xs text-white/50">mingdez@findtheway.com</p>
           </div>
         </div>
         <div className="flex gap-6 mt-4 pt-4 border-t border-white/10">

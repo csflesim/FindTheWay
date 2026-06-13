@@ -4,10 +4,8 @@ import { useState } from "react"
 import { Search, Plus, X, ChevronLeft, ChevronRight, CalendarDays } from "lucide-react"
 
 const teachers = [
-  { id: 1, name: "陳老師", specialty: "水彩・油畫",    courses: 3, monthlyClasses: 12, attendanceRate: 100, joined: "2023/06", status: "在職" },
-  { id: 2, name: "林老師", specialty: "素描・兒童創意", courses: 2, monthlyClasses: 8,  attendanceRate: 96,  joined: "2023/09", status: "在職" },
-  { id: 3, name: "張老師", specialty: "水墨・書法",    courses: 1, monthlyClasses: 4,  attendanceRate: 100, joined: "2024/01", status: "在職" },
-  { id: 4, name: "李老師", specialty: "版畫・雕塑",    courses: 0, monthlyClasses: 0,  attendanceRate: 0,   joined: "2024/08", status: "休假中" },
+  { id: 1, name: "小紫老師", specialty: "兒童創意・親子",  courses: 2, monthlyClasses: 8,  attendanceRate: 100, joined: "2023/06", status: "在職" },
+  { id: 2, name: "明德老師", specialty: "水彩・水墨・油畫", courses: 3, monthlyClasses: 12, attendanceRate: 96,  joined: "2023/09", status: "在職" },
 ]
 
 type Course = { title: string; time: string; studio: string; color: string }
@@ -15,18 +13,6 @@ type ScheduleMap = Record<string, Course[]>
 
 const scheduleByTeacher: Record<number, ScheduleMap> = {
   1: {
-    "2026-06-06": [{ title: "基礎水彩入門",  time: "10:00–12:00", studio: "A", color: "bg-black text-white" }],
-    "2026-06-07": [{ title: "成人油畫工作坊", time: "19:00–21:00", studio: "B", color: "bg-black text-white" }],
-    "2026-06-13": [{ title: "基礎水彩入門",  time: "10:00–12:00", studio: "A", color: "bg-black text-white" }],
-    "2026-06-14": [{ title: "成人油畫工作坊", time: "19:00–21:00", studio: "B", color: "bg-black text-white" }],
-    "2026-06-20": [{ title: "基礎水彩入門",  time: "10:00–12:00", studio: "A", color: "bg-black text-white" }],
-    "2026-06-21": [{ title: "成人油畫工作坊", time: "19:00–21:00", studio: "B", color: "bg-black text-white" }],
-    "2026-06-27": [{ title: "基礎水彩入門",  time: "10:00–12:00", studio: "A", color: "bg-black text-white" }],
-    "2026-06-28": [{ title: "成人油畫工作坊", time: "19:00–21:00", studio: "B", color: "bg-black text-white" }],
-    "2026-07-04": [{ title: "基礎水彩入門",  time: "10:00–12:00", studio: "A", color: "bg-black text-white" }],
-    "2026-07-05": [{ title: "成人油畫工作坊", time: "19:00–21:00", studio: "B", color: "bg-black text-white" }],
-  },
-  2: {
     "2026-06-07": [{ title: "兒童創意素描",  time: "14:00–15:30", studio: "A", color: "bg-black text-white" }],
     "2026-06-08": [{ title: "親子藝術探索",  time: "14:00–15:30", studio: "B", color: "bg-black text-white" }],
     "2026-06-14": [{ title: "兒童創意素描",  time: "14:00–15:30", studio: "A", color: "bg-black text-white" }],
@@ -36,12 +22,18 @@ const scheduleByTeacher: Record<number, ScheduleMap> = {
     "2026-06-28": [{ title: "兒童創意素描",  time: "14:00–15:30", studio: "A", color: "bg-black text-white" }],
     "2026-06-29": [{ title: "親子藝術探索",  time: "14:00–15:30", studio: "B", color: "bg-black text-white" }],
   },
-  3: {
-    "2026-06-03": [{ title: "水墨入門體驗",  time: "19:00–21:00", studio: "C", color: "bg-black text-white" }],
+  2: {
+    "2026-06-06": [{ title: "基礎水彩入門",  time: "10:00–12:00", studio: "A", color: "bg-black text-white" }],
+    "2026-06-07": [{ title: "成人油畫工作坊", time: "19:00–21:00", studio: "B", color: "bg-black text-white" }],
     "2026-06-10": [{ title: "水墨入門體驗",  time: "19:00–21:00", studio: "C", color: "bg-black text-white" }],
+    "2026-06-13": [{ title: "基礎水彩入門",  time: "10:00–12:00", studio: "A", color: "bg-black text-white" }],
+    "2026-06-14": [{ title: "成人油畫工作坊", time: "19:00–21:00", studio: "B", color: "bg-black text-white" }],
     "2026-06-17": [{ title: "水墨入門體驗",  time: "19:00–21:00", studio: "C", color: "bg-black text-white" }],
+    "2026-06-20": [{ title: "基礎水彩入門",  time: "10:00–12:00", studio: "A", color: "bg-black text-white" }],
+    "2026-06-21": [{ title: "成人油畫工作坊", time: "19:00–21:00", studio: "B", color: "bg-black text-white" }],
     "2026-06-24": [{ title: "水墨入門體驗",  time: "19:00–21:00", studio: "C", color: "bg-black text-white" }],
-    "2026-07-01": [{ title: "水墨入門體驗",  time: "19:00–21:00", studio: "C", color: "bg-black text-white" }],
+    "2026-06-27": [{ title: "基礎水彩入門",  time: "10:00–12:00", studio: "A", color: "bg-black text-white" }],
+    "2026-06-28": [{ title: "成人油畫工作坊", time: "19:00–21:00", studio: "B", color: "bg-black text-white" }],
   },
 }
 
