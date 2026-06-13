@@ -27,7 +27,7 @@ const statusStyle: Record<string, string> = {
 
 export default function AdminDashboard() {
   return (
-    <div className="p-6 max-w-5xl">
+    <div className="p-6 w-full">
       <div className="mb-6">
         <p className="text-[11px] text-[#aaa] uppercase tracking-widest">Dashboard</p>
         <h1 className="text-xl font-medium mt-0.5">總覽</h1>

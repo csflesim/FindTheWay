@@ -9,7 +9,7 @@ const packages = [
 
 export default function TicketsPage() {
   return (
-    <div className="p-6 max-w-5xl">
+    <div className="p-6 w-full">
       <div className="flex items-center justify-between mb-6">
         <div>
           <p className="text-[11px] text-[#aaa] uppercase tracking-widest">Tickets</p>

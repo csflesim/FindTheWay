@@ -17,7 +17,7 @@ const statusStyle: Record<string, string> = {
 
 export default function OrdersPage() {
   return (
-    <div className="p-4 md:p-6 max-w-5xl">
+    <div className="p-4 md:p-6 w-full">
       <div className="mb-5">
         <p className="text-[11px] text-[#aaa] uppercase tracking-widest">Orders</p>
         <h1 className="text-lg md:text-xl font-medium mt-0.5">訂單管理</h1>

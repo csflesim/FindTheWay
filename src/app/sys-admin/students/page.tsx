@@ -11,7 +11,7 @@ const students = [
 
 export default function StudentsPage() {
   return (
-    <div className="p-4 md:p-6 max-w-5xl">
+    <div className="p-4 md:p-6 w-full">
       <div className="flex items-center justify-between mb-5">
         <div>
           <p className="text-[11px] text-[#aaa] uppercase tracking-widest">Students</p>

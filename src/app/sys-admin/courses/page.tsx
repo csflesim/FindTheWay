@@ -16,7 +16,7 @@ const statusStyle: Record<string, string> = {
 
 export default function CoursesPage() {
   return (
-    <div className="p-4 md:p-6 max-w-5xl">
+    <div className="p-4 md:p-6 w-full">
       <div className="flex items-center justify-between mb-5">
         <div>
           <p className="text-[11px] text-[#aaa] uppercase tracking-widest">Courses</p>
