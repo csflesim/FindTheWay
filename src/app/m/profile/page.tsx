@@ -33,8 +33,8 @@ export default function ProfilePage() {
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 bg-black rounded-full shrink-0" />
           <div>
-            <p className="text-sm font-medium">hunter3949</p>
-            <p className="text-xs text-[#999]">yande3949@gmail.com</p>
+            <p className="text-sm font-medium">賴大紫</p>
+            <p className="text-xs text-[#999]">purple@findtheway.com</p>
           </div>
         </div>
         <div className="flex gap-6 mt-4 pt-4 border-t border-[#ddd]">
