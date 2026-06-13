@@ -1,33 +1,71 @@
 'use client'
 
-import { useState } from "react"
-import { TrendingUp, TrendingDown } from "lucide-react"
+import { useState, useRef, useEffect } from "react"
+import { TrendingUp, TrendingDown, HelpCircle } from "lucide-react"
 
-const monthStats = [
-  { label: "本月收入",   value: "NT$48,600", sub: "+8% 較上月",  up: true  },
-  { label: "本月退款",   value: "NT$1,200",  sub: "-2% 較上月",  up: true  },
-  { label: "淨收入",     value: "NT$47,400", sub: "+9% 較上月",  up: true  },
-  { label: "待收款",     value: "NT$5,500",  sub: "1 筆待確認",  up: false },
+const statCards = [
+  {
+    label: "收入",
+    value: "NT$48,600",
+    sub: "+8% 較上月",
+    up: true,
+    tip: "該區間所收的現金收入",
+  },
+  {
+    label: "退款",
+    value: "NT$1,200",
+    sub: "-2% 較上月",
+    up: true,
+    tip: "該區間所退款支出",
+  },
+  {
+    label: "淨收入",
+    value: "NT$47,400",
+    sub: "+9% 較上月",
+    up: true,
+    tip: "該區間的淨收入為開區間的：收入 － 退款",
+  },
+  {
+    label: "待收款",
+    value: "NT$5,500",
+    sub: "1 筆待確認",
+    up: false,
+    tip: "訂單已產生，尚未收款之金額",
+  },
+  {
+    label: "使用結算金額",
+    value: "NT$31,200",
+    sub: "+12% 較上月",
+    up: true,
+    tip: "每一張訂單金額會平均至每一張上課券當中，使用結算為該區間內實際服務所產生之帳務結算。",
+  },
+  {
+    label: "未使用餘額",
+    value: "NT$16,200",
+    sub: "區間終點未服務課券",
+    up: false,
+    tip: "每一張訂單金額會平均至每一張上課券當中，未使用餘額為該區間的終點時間時，尚未服務的課程券餘額。",
+  },
 ]
 
 const monthlyRevenue = [
-  { month: "1月",  amount: 32400 },
-  { month: "2月",  amount: 28800 },
-  { month: "3月",  amount: 38500 },
-  { month: "4月",  amount: 41200 },
-  { month: "5月",  amount: 44900 },
-  { month: "6月",  amount: 48600 },
+  { month: "1月", amount: 32400 },
+  { month: "2月", amount: 28800 },
+  { month: "3月", amount: 38500 },
+  { month: "4月", amount: 41200 },
+  { month: "5月", amount: 44900 },
+  { month: "6月", amount: 48600 },
 ]
 
 const transactions = [
-  { id: "ORD-0041", date: "06/13", type: "收入",  item: "10堂體驗包",  student: "陳小明家長",  amount:  9800, status: "已入帳" },
-  { id: "ORD-0040", date: "06/12", type: "收入",  item: "單堂試課券",  student: "林美玲",      amount:  1200, status: "已入帳" },
-  { id: "ORD-0039", date: "06/11", type: "收入",  item: "10堂體驗包",  student: "王大文家長",  amount:  9800, status: "已入帳" },
-  { id: "ORD-0038", date: "06/10", type: "收入",  item: "5堂精選包",   student: "張志豪",      amount:  5500, status: "待確認" },
-  { id: "ORD-0037", date: "06/09", type: "收入",  item: "10堂體驗包",  student: "吳雅婷",      amount:  9800, status: "已入帳" },
-  { id: "ORD-0036", date: "06/08", type: "退款",  item: "20堂年繳包",  student: "劉建宏家長",  amount: -18000, status: "已退款" },
-  { id: "ORD-0035", date: "06/07", type: "收入",  item: "5堂精選包",   student: "許小芸",      amount:  5500, status: "已入帳" },
-  { id: "ORD-0034", date: "06/05", type: "收入",  item: "10堂體驗包",  student: "黃志明",      amount:  9800, status: "已入帳" },
+  { id: "ORD-0041", date: "06/13", type: "收入", item: "10堂體驗包", student: "陳小明家長", amount:   9800, status: "已入帳" },
+  { id: "ORD-0040", date: "06/12", type: "收入", item: "單堂試課券", student: "林美玲",     amount:   1200, status: "已入帳" },
+  { id: "ORD-0039", date: "06/11", type: "收入", item: "10堂體驗包", student: "王大文家長", amount:   9800, status: "已入帳" },
+  { id: "ORD-0038", date: "06/10", type: "收入", item: "5堂精選包",  student: "張志豪",     amount:   5500, status: "待確認" },
+  { id: "ORD-0037", date: "06/09", type: "收入", item: "10堂體驗包", student: "吳雅婷",     amount:   9800, status: "已入帳" },
+  { id: "ORD-0036", date: "06/08", type: "退款", item: "20堂年繳包", student: "劉建宏家長", amount: -18000, status: "已退款" },
+  { id: "ORD-0035", date: "06/07", type: "收入", item: "5堂精選包",  student: "許小芸",     amount:   5500, status: "已入帳" },
+  { id: "ORD-0034", date: "06/05", type: "收入", item: "10堂體驗包", student: "黃志明",     amount:   9800, status: "已入帳" },
 ]
 
 const statusStyle: Record<string, string> = {
@@ -37,6 +75,39 @@ const statusStyle: Record<string, string> = {
 }
 
 const maxAmount = Math.max(...monthlyRevenue.map(m => m.amount))
+
+function Tooltip({ text }: { text: string }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener("mousedown", handler)
+    return () => document.removeEventListener("mousedown", handler)
+  }, [open])
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onClick={() => setOpen(v => !v)}
+        className="text-[#ccc] hover:text-[#999] transition-colors"
+      >
+        <HelpCircle size={13} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-5 z-20 w-56 bg-[#1a1a1a] text-white text-[11px] leading-relaxed rounded-xl px-3 py-2.5 shadow-xl">
+          {text}
+          <div className="absolute -top-1.5 right-1 w-3 h-3 bg-[#1a1a1a] rotate-45 rounded-sm" />
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function FinancePage() {
   const [from, setFrom] = useState("2026-06-01")
@@ -56,33 +127,25 @@ export default function FinancePage() {
 
         {/* Date filter */}
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-1.5 bg-white border border-[#f0f0f0] rounded-xl px-3 py-2">
+          <div className="flex items-center bg-white border border-[#f0f0f0] rounded-xl px-3 py-2">
             <input
-              type="date"
-              value={from}
-              onChange={e => setFrom(e.target.value)}
+              type="date" value={from} onChange={e => setFrom(e.target.value)}
               className="text-sm text-[#333] outline-none bg-transparent w-[120px]"
             />
           </div>
           <span className="text-[#bbb] text-sm">～</span>
-          <div className="flex items-center gap-1.5 bg-white border border-[#f0f0f0] rounded-xl px-3 py-2">
+          <div className="flex items-center bg-white border border-[#f0f0f0] rounded-xl px-3 py-2">
             <input
-              type="date"
-              value={to}
-              onChange={e => setTo(e.target.value)}
+              type="date" value={to} onChange={e => setTo(e.target.value)}
               className="text-sm text-[#333] outline-none bg-transparent w-[120px]"
             />
           </div>
-          <button
-            onClick={setThisPeriod}
-            className="px-3 py-2 text-sm bg-white border border-[#f0f0f0] rounded-xl text-[#666] hover:border-black hover:text-black transition-colors"
-          >
+          <button onClick={setThisPeriod}
+            className="px-3 py-2 text-sm bg-white border border-[#f0f0f0] rounded-xl text-[#666] hover:border-black hover:text-black transition-colors">
             本期
           </button>
-          <button
-            onClick={setLastPeriod}
-            className="px-3 py-2 text-sm bg-white border border-[#f0f0f0] rounded-xl text-[#666] hover:border-black hover:text-black transition-colors"
-          >
+          <button onClick={setLastPeriod}
+            className="px-3 py-2 text-sm bg-white border border-[#f0f0f0] rounded-xl text-[#666] hover:border-black hover:text-black transition-colors">
             上期
           </button>
           <button className="px-4 py-2 text-sm bg-black text-white rounded-xl hover:bg-[#222] transition-colors">
@@ -91,17 +154,17 @@ export default function FinancePage() {
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        {monthStats.map(({ label, value, sub, up }) => (
+      {/* Stat cards — 3 cols on md, 2 on sm */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
+        {statCards.map(({ label, value, sub, up, tip }) => (
           <div key={label} className="bg-white rounded-xl p-4 border border-[#f0f0f0]">
-            <p className="text-[11px] text-[#999] mb-2">{label}</p>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[11px] text-[#999]">{label}</p>
+              <Tooltip text={tip} />
+            </div>
             <p className="text-lg md:text-xl font-medium leading-none">{value}</p>
             <div className={`flex items-center gap-1 mt-1.5 ${up ? "text-green-600" : "text-[#e08800]"}`}>
-              {up
-                ? <TrendingUp size={11} />
-                : <TrendingDown size={11} />
-              }
+              {up ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
               <p className="text-[10px]">{sub}</p>
             </div>
           </div>
@@ -118,16 +181,9 @@ export default function FinancePage() {
               const isLatest = m.month === "6月"
               return (
                 <div key={m.month} className="flex-1 flex flex-col items-center gap-1.5">
-                  <p className="text-[10px] text-[#999]">
-                    {(m.amount / 1000).toFixed(0)}k
-                  </p>
+                  <p className="text-[10px] text-[#999]">{(m.amount / 1000).toFixed(0)}k</p>
                   <div className="w-full rounded-t-md transition-all"
-                    style={{
-                      height: `${pct}%`,
-                      backgroundColor: isLatest ? "#000" : "#e8e8e8",
-                      minHeight: 4,
-                    }}
-                  />
+                    style={{ height: `${pct}%`, backgroundColor: isLatest ? "#000" : "#e8e8e8", minHeight: 4 }} />
                   <p className={`text-[10px] ${isLatest ? "font-medium" : "text-[#bbb]"}`}>{m.month}</p>
                 </div>
               )
