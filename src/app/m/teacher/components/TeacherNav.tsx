@@ -2,21 +2,20 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Home, BookOpen, Receipt, User } from "lucide-react"
+import { BookOpen, ClipboardList, CalendarOff, User } from "lucide-react"
 
 const tabs = [
-  { href: "/m", label: "首頁", icon: Home },
-  { href: "/m/courses", label: "課程", icon: BookOpen },
-  { href: "/m/orders", label: "訂單", icon: Receipt },
-  { href: "/m/profile", label: "我的", icon: User },
+  { href: "/m/teacher",              label: "我的課程", icon: BookOpen     },
+  { href: "/m/teacher/attendance",   label: "點名",     icon: ClipboardList },
+  { href: "/m/teacher/availability", label: "請假",     icon: CalendarOff  },
+  { href: "/m/teacher/profile",      label: "我的",     icon: User         },
 ]
 
-export default function MobileNav() {
+export default function TeacherNav() {
   const pathname = usePathname()
-  if (pathname.startsWith("/m/teacher")) return null
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#ebebeb] z-50 safe-area-inset-bottom">
+    <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#ebebeb] z-50">
       <div className="max-w-md mx-auto flex">
         {tabs.map(({ href, label, icon: Icon }) => {
           const active = pathname === href
