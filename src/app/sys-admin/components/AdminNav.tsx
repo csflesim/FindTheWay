@@ -11,28 +11,28 @@ import {
 } from "lucide-react"
 
 const MOCK_USER = {
-  name: "陳美玲",
+  name: "鄭明德",
   role: "超級管理員",
-  initial: "陳",
+  initial: "鄭",
   avatarColor: "bg-indigo-500",
 }
 
 const navItems = [
-  { href: "/sys-admin",           label: "總覽",     icon: LayoutDashboard },
-  { href: "/sys-admin/accounts",  label: "帳號管理", icon: UserCircle      },
-  { href: "/sys-admin/students",  label: "學員管理", icon: Users           },
-  { href: "/sys-admin/teachers",  label: "教師管理", icon: GraduationCap   },
-  { href: "/sys-admin/courses",   label: "課程管理", icon: BookOpen        },
-  { href: "/sys-admin/tickets",   label: "商品管理", icon: Ticket          },
-  { href: "/sys-admin/orders",    label: "訂單管理", icon: ShoppingBag     },
-  { href: "/sys-admin/finance",   label: "帳務管理", icon: Wallet          },
-  { href: "/sys-admin/roster",    label: "出席管理", icon: ClipboardList   },
+  { href: "/sys-admin", label: "總覽", icon: LayoutDashboard },
+  { href: "/sys-admin/accounts", label: "帳號管理", icon: UserCircle },
+  { href: "/sys-admin/students", label: "學員管理", icon: Users },
+  { href: "/sys-admin/teachers", label: "教師管理", icon: GraduationCap },
+  { href: "/sys-admin/courses", label: "課程管理", icon: BookOpen },
+  { href: "/sys-admin/tickets", label: "商品管理", icon: Ticket },
+  { href: "/sys-admin/orders", label: "訂單管理", icon: ShoppingBag },
+  { href: "/sys-admin/finance", label: "帳務管理", icon: Wallet },
+  { href: "/sys-admin/roster", label: "出席管理", icon: ClipboardList },
 ]
 
 const sysItems = [
-  { href: "/sys-admin/system/members", label: "人員管理", icon: UserCog           },
-  { href: "/sys-admin/system/roles",   label: "角色管理", icon: Shield            },
-  { href: "/sys-admin/system/params",  label: "參數管理", icon: SlidersHorizontal },
+  { href: "/sys-admin/system/members", label: "人員管理", icon: UserCog },
+  { href: "/sys-admin/system/roles", label: "角色管理", icon: Shield },
+  { href: "/sys-admin/system/params", label: "參數管理", icon: SlidersHorizontal },
 ]
 
 function UserCard() {
@@ -63,11 +63,10 @@ function NavLinks({ onClose }: { onClose?: () => void }) {
         const active = pathname === href
         return (
           <Link key={href} href={href} onClick={onClose}
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-              active
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${active
                 ? "bg-white text-black font-medium"
                 : "text-white/60 hover:text-white hover:bg-white/10"
-            }`}>
+              }`}>
             <Icon size={16} strokeWidth={active ? 2 : 1.5} />
             {label}
           </Link>
@@ -80,11 +79,10 @@ function NavLinks({ onClose }: { onClose?: () => void }) {
       {/* System group */}
       <button
         onClick={() => setSysOpen(v => !v)}
-        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors w-full text-left ${
-          sysActive
+        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors w-full text-left ${sysActive
             ? "text-white"
             : "text-white/60 hover:text-white hover:bg-white/10"
-        }`}
+          }`}
       >
         <Settings2 size={16} strokeWidth={1.5} />
         <span className="flex-1">系統管理</span>
@@ -100,11 +98,10 @@ function NavLinks({ onClose }: { onClose?: () => void }) {
             const active = pathname === href
             return (
               <Link key={href} href={href} onClick={onClose}
-                className={`flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg text-sm transition-colors ${
-                  active
+                className={`flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg text-sm transition-colors ${active
                     ? "bg-white text-black font-medium"
                     : "text-white/50 hover:text-white hover:bg-white/10"
-                }`}>
+                  }`}>
                 <Icon size={14} strokeWidth={active ? 2 : 1.5} />
                 {label}
               </Link>
