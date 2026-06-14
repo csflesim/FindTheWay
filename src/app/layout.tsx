@@ -15,6 +15,9 @@ const playfair = Playfair_Display({
 export const metadata: Metadata = {
   title: "忙碌不迷路藝術工作坊 | Find the Way Art",
   description: "A dedicated studio exploring expression, form, and texture through bespoke art and visual storytelling.",
+  icons: {
+    icon: "/image/logo.png",
+  },
 };
 
 export default function RootLayout({
