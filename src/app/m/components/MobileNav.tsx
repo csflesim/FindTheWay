@@ -2,12 +2,12 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Home, BookOpen, Receipt, User } from "lucide-react"
+import { Home, BookOpen, ScrollText, User } from "lucide-react"
 
 const tabs = [
   { href: "/m", label: "首頁", icon: Home },
   { href: "/m/courses", label: "課程", icon: BookOpen },
-  { href: "/m/orders", label: "訂單", icon: Receipt },
+  { href: "/m/orders", label: "訂單", icon: ScrollText },
   { href: "/m/profile", label: "我的", icon: User },
 ]
 

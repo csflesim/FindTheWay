@@ -1,16 +1,21 @@
+'use client'
+
+import { useState } from "react"
 import Link from "next/link"
+import { COURSES, CATEGORIES } from "../_lib/courses"
 
-const categories = ["全部", "素描", "水彩", "油畫", "兒童美術", "親子"]
-
-const courses = [
-  { id: 1, title: "基礎水彩入門", age: "8歲以上", teacher: "陳老師", date: "每週六 10:00–12:00", spots: 3, price: 1200 },
-  { id: 2, title: "兒童創意素描", age: "6–12歲", teacher: "林老師", date: "每週日 14:00–15:30", spots: 5, price: 980 },
-  { id: 3, title: "成人油畫工作坊", age: "18歲以上", teacher: "陳老師", date: "每週五 19:00–21:00", spots: 2, price: 1500 },
-  { id: 4, title: "親子藝術探索", age: "4–8歲（含家長）", teacher: "林老師", date: "每週六 14:00–15:30", spots: 4, price: 1100 },
-  { id: 5, title: "水墨入門體驗", age: "10歲以上", teacher: "張老師", date: "每週三 19:00–21:00", spots: 6, price: 1300 },
-]
+const TEACHER_PHOTOS: Record<string, string> = {
+  "小紫老師": "/image/purple.jpg",
+  "明德老師": "/image/mingdez.jpg",
+}
 
 export default function CoursesPage() {
+  const [activeCategory, setActiveCategory] = useState("全部")
+
+  const filtered = activeCategory === "全部"
+    ? COURSES
+    : COURSES.filter(c => c.category === activeCategory)
+
   return (
     <div>
       <header className="sticky top-0 bg-white/90 backdrop-blur-sm border-b border-[#ebebeb] px-5 py-4 z-10">
@@ -19,30 +24,36 @@ export default function CoursesPage() {
 
       {/* Category tabs */}
       <div className="flex gap-2 overflow-x-auto px-4 py-3 border-b border-[#f0f0f0] no-scrollbar">
-        {categories.map((cat, i) => (
-          <span
+        {CATEGORIES.map(cat => (
+          <button
             key={cat}
-            className={`shrink-0 text-xs px-3 py-1.5 rounded-full border ${
-              i === 0
+            onClick={() => setActiveCategory(cat)}
+            className={`shrink-0 text-xs px-3 py-1.5 rounded-full border transition-colors ${
+              activeCategory === cat
                 ? "bg-black text-white border-black"
-                : "border-[#ddd] text-[#666]"
+                : "border-[#ddd] text-[#666] hover:border-black hover:text-black"
             }`}
           >
             {cat}
-          </span>
+          </button>
         ))}
       </div>
 
       {/* Course list */}
       <div className="px-4 py-3 flex flex-col gap-3">
-        {courses.map((course) => (
+        {filtered.length === 0 && (
+          <p className="text-sm text-[#ccc] py-8 text-center">此分類暫無課程</p>
+        )}
+        {filtered.map((course) => (
           <Link
             key={course.id}
             href={`/m/courses/${course.id}`}
-            className="bg-white rounded-xl overflow-hidden border border-[#f0f0f0]"
+            className="bg-white rounded-xl overflow-hidden border border-[#f0f0f0] active:bg-[#fafaf9] transition-colors"
           >
-            {/* Thumbnail */}
-            <div className="w-full h-36 bg-[#f2f2f2]" />
+            {course.imgLandscape
+              ? <img src={course.imgLandscape} alt={course.title} className="w-full h-36 object-cover" />
+              : <div className="w-full h-36 bg-[#f2f2f2]" />
+            }
             <div className="p-4">
               <div className="flex items-start justify-between gap-2 mb-1.5">
                 <h3 className="text-sm font-medium">{course.title}</h3>
@@ -50,7 +61,16 @@ export default function CoursesPage() {
                   {course.age}
                 </span>
               </div>
-              <p className="text-xs text-[#999]">{course.teacher} · {course.date}</p>
+              <div className="flex items-center gap-2 mt-1">
+                <div className="flex -space-x-1.5">
+                  {course.teacher.split("、").map(t => (
+                    TEACHER_PHOTOS[t]
+                      ? <img key={t} src={TEACHER_PHOTOS[t]} alt={t} className="w-5 h-5 rounded-full object-cover ring-1 ring-white" />
+                      : <div key={t} className="w-5 h-5 rounded-full bg-[#e8e8e8] ring-1 ring-white flex items-center justify-center text-[8px] text-[#999]">{t.slice(0,1)}</div>
+                  ))}
+                </div>
+                <p className="text-xs text-[#999]">{course.teacher} · {course.date} {course.time}</p>
+              </div>
               <div className="flex items-center justify-between mt-3">
                 <span className="text-xs text-[#999]">剩 {course.spots} 個名額</span>
                 <div className="flex items-center gap-2">

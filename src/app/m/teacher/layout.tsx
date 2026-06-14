@@ -1,5 +1,5 @@
 import type { Metadata } from "next"
-import TeacherNav from "./components/TeacherNav"
+import TeacherShell from "./components/TeacherShell"
 import { AvailabilityProvider } from "./context/AvailabilityProvider"
 
 export const metadata: Metadata = {
@@ -9,12 +9,7 @@ export const metadata: Metadata = {
 export default function TeacherLayout({ children }: { children: React.ReactNode }) {
   return (
     <AvailabilityProvider>
-      <div className="min-h-screen bg-[#fafaf9]">
-        <main className="pb-20 max-w-md mx-auto min-h-screen">
-          {children}
-        </main>
-        <TeacherNav />
-      </div>
+      <TeacherShell>{children}</TeacherShell>
     </AvailabilityProvider>
   )
 }

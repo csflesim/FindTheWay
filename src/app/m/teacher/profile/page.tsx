@@ -16,7 +16,7 @@ export default function TeacherProfilePage() {
       {/* Profile card */}
       <div className="mx-4 mt-4 bg-black text-white rounded-2xl p-5">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 bg-white/20 rounded-full shrink-0" />
+          <img src="/image/mingdez.jpg" alt="頭貼" className="w-12 h-12 rounded-full shrink-0 object-cover" />
           <div>
             <p className="text-[10px] text-white/50 uppercase tracking-widest">Instructor</p>
             <p className="text-sm font-medium mt-0.5">明德老師</p>

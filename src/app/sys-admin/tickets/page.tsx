@@ -1,28 +1,164 @@
-import { Plus } from "lucide-react"
+'use client'
 
-const packages = [
-  { id: 1, name: "單堂試課券",  qty: 1,  price: 1200, transferable: false, active: true,  sold: 38 },
-  { id: 2, name: "5堂精選包",   qty: 5,  price: 5500, transferable: false, active: true,  sold: 24 },
-  { id: 3, name: "10堂體驗包",  qty: 10, price: 9800, transferable: true,  active: true,  sold: 61 },
-  { id: 4, name: "20堂年繳包",  qty: 20, price: 18000, transferable: true, active: false, sold: 12 },
+import { useState } from "react"
+import { Plus, X } from "lucide-react"
+
+type TicketPackage = {
+  id: number
+  name: string
+  qty: number
+  price: number
+  expireMonths: number
+  cancelHours: number
+  transferable: boolean
+  active: boolean
+  sold: number
+  notes?: string
+}
+
+const INITIAL_PACKAGES: TicketPackage[] = [
+  { id: 1, name: "單堂試課券",  qty: 1,  price: 1200,  expireMonths: 3,  cancelHours: 24, transferable: false, active: true,  sold: 38 },
+  { id: 2, name: "5堂精選包",   qty: 5,  price: 5500,  expireMonths: 6,  cancelHours: 24, transferable: false, active: true,  sold: 24 },
+  { id: 3, name: "10堂體驗包",  qty: 10, price: 9800,  expireMonths: 12, cancelHours: 24, transferable: true,  active: true,  sold: 61 },
+  { id: 4, name: "20堂年繳包",  qty: 20, price: 18000, expireMonths: 12, cancelHours: 48, transferable: true,  active: false, sold: 12 },
 ]
 
+const EMPTY_FORM = {
+  name: "",
+  qty: 1,
+  price: 0,
+  expireMonths: 12,
+  cancelHours: 24,
+  transferable: false,
+  active: true,
+  notes: "",
+}
+
+// ── Drawer ──────────────────────────────────────────
+
+function Drawer({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <aside className="relative w-full max-w-md bg-white h-full flex flex-col shadow-2xl">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-[#f0f0f0] shrink-0">
+          <h2 className="text-base font-medium">{title}</h2>
+          <button onClick={onClose} className="text-[#bbb] hover:text-black transition-colors">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto">{children}</div>
+      </aside>
+    </div>
+  )
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="text-xs text-[#999] mb-1.5 block">{label}</label>
+      {children}
+    </div>
+  )
+}
+
+const inputCls = "w-full px-3 py-2.5 text-sm bg-[#fafaf9] border border-[#f0f0f0] rounded-xl outline-none focus:border-black focus:bg-white transition-colors"
+
+// ── Main Page ────────────────────────────────────────
+
 export default function TicketsPage() {
+  const [packages, setPackages] = useState<TicketPackage[]>(INITIAL_PACKAGES)
+  const [drawer, setDrawer] = useState<"add" | "edit" | null>(null)
+  const [editing, setEditing] = useState<TicketPackage | null>(null)
+  const [form, setForm] = useState(EMPTY_FORM)
+  const [nextId, setNextId] = useState(10)
+
+  function openAdd() {
+    setForm(EMPTY_FORM)
+    setDrawer("add")
+  }
+
+  function openEdit(pkg: TicketPackage) {
+    setEditing(pkg)
+    setForm({
+      name: pkg.name,
+      qty: pkg.qty,
+      price: pkg.price,
+      expireMonths: pkg.expireMonths,
+      cancelHours: pkg.cancelHours,
+      transferable: pkg.transferable,
+      active: pkg.active,
+      notes: pkg.notes ?? "",
+    })
+    setDrawer("edit")
+  }
+
+  function close() {
+    setDrawer(null)
+    setEditing(null)
+  }
+
+  function saveAdd() {
+    const pkg: TicketPackage = {
+      id: nextId,
+      name: form.name,
+      qty: form.qty,
+      price: form.price,
+      expireMonths: form.expireMonths,
+      cancelHours: form.cancelHours,
+      transferable: form.transferable,
+      active: form.active,
+      sold: 0,
+      notes: form.notes || undefined,
+    }
+    setPackages(prev => [...prev, pkg])
+    setNextId(n => n + 1)
+    close()
+  }
+
+  function saveEdit() {
+    if (!editing) return
+    setPackages(prev => prev.map(p =>
+      p.id === editing.id
+        ? { ...p, name: form.name, qty: form.qty, price: form.price, expireMonths: form.expireMonths, cancelHours: form.cancelHours, transferable: form.transferable, active: form.active, notes: form.notes || undefined }
+        : p
+    ))
+    close()
+  }
+
+  function toggleActive(id: number) {
+    setPackages(prev => prev.map(p => p.id === id ? { ...p, active: !p.active } : p))
+  }
+
+  function set<K extends keyof typeof form>(k: K, v: typeof form[K]) {
+    setForm(f => ({ ...f, [k]: v }))
+  }
+
+  const drawerOpen = drawer !== null
+
   return (
     <div className="p-6 w-full">
+      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <p className="text-[11px] text-[#aaa] uppercase tracking-widest">Tickets</p>
           <h1 className="text-xl font-medium mt-0.5">課堂券組合</h1>
         </div>
-        <button className="flex items-center gap-1.5 bg-black text-white text-sm px-4 py-2 rounded-lg">
+        <button
+          onClick={openAdd}
+          className="flex items-center gap-1.5 bg-black text-white text-sm px-4 py-2 rounded-lg hover:bg-[#222] transition-colors"
+        >
           <Plus size={15} />新增組合
         </button>
       </div>
 
+      {/* Cards grid */}
       <div className="grid md:grid-cols-2 gap-4">
         {packages.map((pkg) => (
-          <div key={pkg.id} className={`bg-white rounded-xl border p-5 ${pkg.active ? "border-[#f0f0f0]" : "border-[#f0f0f0] opacity-50"}`}>
+          <div
+            key={pkg.id}
+            className={`bg-white rounded-xl border border-[#f0f0f0] p-5 transition-opacity ${!pkg.active ? "opacity-60" : ""}`}
+          >
             <div className="flex items-start justify-between mb-4">
               <div>
                 <p className="text-sm font-medium">{pkg.name}</p>
@@ -40,13 +176,21 @@ export default function TicketsPage() {
             <div className="flex items-center justify-between mt-4 pt-3 border-t border-[#f5f5f5]">
               <div className="flex gap-3 text-xs text-[#999]">
                 <span>已售 {pkg.sold} 組</span>
-                <span className={pkg.transferable ? "text-black" : ""}>
+                <span className={pkg.transferable ? "text-black font-medium" : ""}>
                   {pkg.transferable ? "可轉讓" : "不可轉讓"}
                 </span>
               </div>
-              <div className="flex gap-2">
-                <button className="text-xs text-[#999] hover:text-black">編輯</button>
-                <button className="text-xs text-[#999] hover:text-black">
+              <div className="flex gap-3">
+                <button
+                  onClick={() => openEdit(pkg)}
+                  className="text-xs text-[#999] hover:text-black transition-colors"
+                >
+                  編輯
+                </button>
+                <button
+                  onClick={() => toggleActive(pkg.id)}
+                  className="text-xs text-[#999] hover:text-black transition-colors"
+                >
                   {pkg.active ? "下架" : "上架"}
                 </button>
               </div>
@@ -54,6 +198,127 @@ export default function TicketsPage() {
           </div>
         ))}
       </div>
+
+      {/* ── Drawer ── */}
+      {drawerOpen && (
+        <Drawer
+          title={drawer === "add" ? "新增組合" : "編輯組合"}
+          onClose={close}
+        >
+          <div className="flex flex-col gap-5 p-6">
+            <Field label="組合名稱">
+              <input
+                className={inputCls}
+                placeholder="例：10堂體驗包"
+                value={form.name}
+                onChange={e => set("name", e.target.value)}
+              />
+            </Field>
+
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="堂數">
+                <input
+                  type="number"
+                  min={1}
+                  className={inputCls}
+                  value={form.qty}
+                  onChange={e => set("qty", Number(e.target.value))}
+                />
+              </Field>
+              <Field label="售價（NT$）">
+                <input
+                  type="number"
+                  min={0}
+                  className={inputCls}
+                  value={form.price}
+                  onChange={e => set("price", Number(e.target.value))}
+                />
+              </Field>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="有效期（月，0不過期）">
+                <input
+                  type="number" min={0}
+                  className={inputCls}
+                  value={form.expireMonths}
+                  onChange={e => set("expireMonths", Number(e.target.value))}
+                />
+              </Field>
+              <Field label="取消期限（小時前）">
+                <input
+                  type="number" min={0}
+                  className={inputCls}
+                  value={form.cancelHours}
+                  onChange={e => set("cancelHours", Number(e.target.value))}
+                />
+              </Field>
+            </div>
+
+            <Field label="可轉讓">
+              <div className="flex gap-2">
+                {([true, false] as const).map(v => (
+                  <button
+                    key={String(v)}
+                    onClick={() => set("transferable", v)}
+                    className={`flex-1 py-2 text-sm rounded-xl border transition-colors ${
+                      form.transferable === v
+                        ? "bg-black text-white border-black"
+                        : "bg-[#fafaf9] text-[#555] border-[#f0f0f0] hover:border-[#ccc]"
+                    }`}
+                  >
+                    {v ? "可轉讓" : "不可轉讓"}
+                  </button>
+                ))}
+              </div>
+            </Field>
+
+            <Field label="狀態">
+              <div className="flex gap-2">
+                {([true, false] as const).map(v => (
+                  <button
+                    key={String(v)}
+                    onClick={() => set("active", v)}
+                    className={`flex-1 py-2 text-sm rounded-xl border transition-colors ${
+                      form.active === v
+                        ? "bg-black text-white border-black"
+                        : "bg-[#fafaf9] text-[#555] border-[#f0f0f0] hover:border-[#ccc]"
+                    }`}
+                  >
+                    {v ? "上架" : "下架"}
+                  </button>
+                ))}
+              </div>
+            </Field>
+
+            <Field label="備註">
+              <textarea
+                className={`${inputCls} resize-none h-20`}
+                placeholder="選填"
+                value={form.notes}
+                onChange={e => set("notes", e.target.value)}
+              />
+            </Field>
+          </div>
+
+          {/* Footer */}
+          <div className="px-6 py-4 border-t border-[#f0f0f0] flex gap-3 shrink-0">
+            <button
+              onClick={close}
+              className="flex-1 py-2.5 text-sm border border-[#f0f0f0] rounded-xl text-[#666] hover:border-[#ccc] transition-colors"
+            >
+              取消
+            </button>
+            <button
+              onClick={drawer === "add" ? saveAdd : saveEdit}
+              disabled={!form.name || form.qty < 1 || form.price < 0}
+              className="flex-1 py-2.5 text-sm bg-black text-white rounded-xl hover:bg-[#222] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {drawer === "add" ? "新增" : "儲存"}
+            </button>
+          </div>
+        </Drawer>
+      )}
     </div>
   )
 }

@@ -7,7 +7,7 @@ import {
   LayoutDashboard, BookOpen, Ticket,
   Users, ShoppingBag, ClipboardList,
   LogOut, Menu, X, UserCircle, GraduationCap, Wallet,
-  Settings2, UserCog, Shield, SlidersHorizontal, ChevronDown, Bell,
+  Settings2, UserCog, Shield, SlidersHorizontal, ChevronDown, Bell, Building2, LayoutGrid, CreditCard,
 } from "lucide-react"
 
 const MOCK_USER = {
@@ -17,30 +17,49 @@ const MOCK_USER = {
   avatarColor: "bg-indigo-500",
 }
 
-const navItems = [
-  { href: "/sys-admin", label: "總覽", icon: LayoutDashboard },
-  { href: "/sys-admin/accounts", label: "帳號管理", icon: UserCircle },
-  { href: "/sys-admin/students", label: "學員管理", icon: Users },
-  { href: "/sys-admin/teachers", label: "教師管理", icon: GraduationCap },
-  { href: "/sys-admin/courses", label: "課程管理", icon: BookOpen },
-  { href: "/sys-admin/tickets", label: "商品管理", icon: Ticket },
-  { href: "/sys-admin/orders", label: "訂單管理", icon: ShoppingBag },
-  { href: "/sys-admin/finance", label: "帳務管理", icon: Wallet },
-  { href: "/sys-admin/roster", label: "出席管理", icon: ClipboardList },
+type NavItem = { href: string; label: string; icon: React.ElementType }
+
+const topItem: NavItem = { href: "/sys-admin", label: "總覽", icon: LayoutDashboard }
+
+const navGroups: { group: string; items: NavItem[] }[] = [
+  {
+    group: "人員管理",
+    items: [
+      { href: "/sys-admin/accounts", label: "帳號管理", icon: UserCircle },
+      { href: "/sys-admin/students", label: "學員管理", icon: Users },
+      { href: "/sys-admin/teachers", label: "教師管理", icon: GraduationCap },
+    ],
+  },
+  {
+    group: "課程管理",
+    items: [
+      { href: "/sys-admin/units",      label: "單位管理", icon: Building2 },
+      { href: "/sys-admin/classrooms", label: "教室管理", icon: LayoutGrid },
+      { href: "/sys-admin/courses",    label: "課堂管理", icon: BookOpen },
+      { href: "/sys-admin/roster",     label: "出席管理", icon: ClipboardList },
+    ],
+  },
+  {
+    group: "經營管理",
+    items: [
+      { href: "/sys-admin/tickets",  label: "商品管理", icon: Ticket },
+      { href: "/sys-admin/orders",   label: "訂單管理", icon: ShoppingBag },
+      { href: "/sys-admin/vouchers", label: "卡券管理", icon: CreditCard },
+      { href: "/sys-admin/finance",  label: "帳務管理", icon: Wallet },
+    ],
+  },
 ]
 
-const sysItems = [
+const sysItems: NavItem[] = [
   { href: "/sys-admin/system/members", label: "人員管理", icon: UserCog },
-  { href: "/sys-admin/system/roles", label: "角色管理", icon: Shield },
-  { href: "/sys-admin/system/params", label: "參數管理", icon: SlidersHorizontal },
+  { href: "/sys-admin/system/roles",   label: "角色管理", icon: Shield },
+  { href: "/sys-admin/system/params",  label: "參數管理", icon: SlidersHorizontal },
 ]
 
 function UserCard() {
   return (
     <div className="mx-3 mb-1 flex items-center gap-2.5 bg-white/10 rounded-xl px-3 py-2.5">
-      <div className={`w-8 h-8 ${MOCK_USER.avatarColor} rounded-full shrink-0 flex items-center justify-center text-xs text-white font-semibold`}>
-        {MOCK_USER.initial}
-      </div>
+      <img src="/image/mingdez.jpg" alt="頭貼" className="w-8 h-8 rounded-full shrink-0 object-cover" />
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-white truncate">{MOCK_USER.name}</p>
         <p className="text-[10px] text-white/50 truncate">{MOCK_USER.role}</p>
@@ -52,44 +71,82 @@ function UserCard() {
   )
 }
 
+function CollapsibleGroup({
+  group, items, onClose,
+}: { group: string; items: NavItem[]; onClose?: () => void }) {
+  const pathname = usePathname()
+  const hasActive = items.some(i => pathname.startsWith(i.href))
+  const [open, setOpen] = useState(hasActive)
+
+  return (
+    <div>
+      <button
+        onClick={() => setOpen(v => !v)}
+        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors w-full text-left ${
+          hasActive ? "text-white" : "text-white/60 hover:text-white hover:bg-white/10"
+        }`}
+      >
+        <span className="flex-1">{group}</span>
+        <ChevronDown size={13} className={`transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="flex flex-col gap-0.5 pl-2">
+          {items.map(({ href, label, icon: Icon }) => {
+            const active = pathname === href
+            return (
+              <Link key={href} href={href} onClick={onClose}
+                className={`flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg text-sm transition-colors ${
+                  active
+                    ? "bg-white text-black font-medium"
+                    : "text-white/50 hover:text-white hover:bg-white/10"
+                }`}>
+                <Icon size={14} strokeWidth={active ? 2 : 1.5} />
+                {label}
+              </Link>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function NavLinks({ onClose }: { onClose?: () => void }) {
   const pathname = usePathname()
   const sysActive = sysItems.some(i => pathname.startsWith(i.href))
   const [sysOpen, setSysOpen] = useState(sysActive)
+  const topActive = pathname === topItem.href
 
   return (
     <nav className="flex-1 px-3 py-3 flex flex-col gap-0.5 overflow-y-auto">
-      {navItems.map(({ href, label, icon: Icon }) => {
-        const active = pathname === href
-        return (
-          <Link key={href} href={href} onClick={onClose}
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${active
-                ? "bg-white text-black font-medium"
-                : "text-white/60 hover:text-white hover:bg-white/10"
-              }`}>
-            <Icon size={16} strokeWidth={active ? 2 : 1.5} />
-            {label}
-          </Link>
-        )
-      })}
+      {/* 總覽 */}
+      <Link href={topItem.href} onClick={onClose}
+        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+          topActive ? "bg-white text-black font-medium" : "text-white/60 hover:text-white hover:bg-white/10"
+        }`}>
+        <topItem.icon size={16} strokeWidth={topActive ? 2 : 1.5} />
+        {topItem.label}
+      </Link>
+
+      {/* Collapsible groups */}
+      {navGroups.map(({ group, items }) => (
+        <CollapsibleGroup key={group} group={group} items={items} onClose={onClose} />
+      ))}
 
       {/* Divider */}
       <div className="my-2 border-t border-white/10" />
 
-      {/* System group */}
+      {/* 系統管理 */}
       <button
         onClick={() => setSysOpen(v => !v)}
-        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors w-full text-left ${sysActive
-            ? "text-white"
-            : "text-white/60 hover:text-white hover:bg-white/10"
-          }`}
+        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors w-full text-left ${
+          sysActive ? "text-white" : "text-white/60 hover:text-white hover:bg-white/10"
+        }`}
       >
         <Settings2 size={16} strokeWidth={1.5} />
         <span className="flex-1">系統管理</span>
-        <ChevronDown
-          size={14}
-          className={`transition-transform duration-200 ${sysOpen ? "rotate-180" : ""}`}
-        />
+        <ChevronDown size={13} className={`transition-transform duration-200 ${sysOpen ? "rotate-180" : ""}`} />
       </button>
 
       {sysOpen && (
@@ -98,10 +155,11 @@ function NavLinks({ onClose }: { onClose?: () => void }) {
             const active = pathname === href
             return (
               <Link key={href} href={href} onClick={onClose}
-                className={`flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg text-sm transition-colors ${active
+                className={`flex items-center gap-3 pl-5 pr-3 py-2 rounded-lg text-sm transition-colors ${
+                  active
                     ? "bg-white text-black font-medium"
                     : "text-white/50 hover:text-white hover:bg-white/10"
-                  }`}>
+                }`}>
                 <Icon size={14} strokeWidth={active ? 2 : 1.5} />
                 {label}
               </Link>
@@ -120,12 +178,10 @@ export default function AdminNav() {
     <>
       {/* ── Desktop sidebar ─────────────────────── */}
       <aside className="hidden lg:flex flex-col w-52 min-h-screen bg-black text-white shrink-0">
-        {/* Brand */}
         <div className="px-5 py-4 border-b border-white/10">
           <p className="text-[10px] text-white/40 uppercase tracking-widest">Find the Way</p>
           <p className="text-sm font-medium mt-0.5">管理後台</p>
         </div>
-        {/* User card */}
         <div className="pt-3 pb-1">
           <UserCard />
         </div>
@@ -143,9 +199,7 @@ export default function AdminNav() {
           <Menu size={20} />
         </button>
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <div className={`w-6 h-6 ${MOCK_USER.avatarColor} rounded-full shrink-0 flex items-center justify-center text-[10px] text-white font-semibold`}>
-            {MOCK_USER.initial}
-          </div>
+          <img src="/image/mingdez.jpg" alt="頭貼" className="w-6 h-6 rounded-full shrink-0 object-cover" />
           <p className="text-sm font-medium truncate">{MOCK_USER.name}</p>
         </div>
         <button className="text-white/50 hover:text-white p-1">
@@ -158,7 +212,6 @@ export default function AdminNav() {
         <div className="lg:hidden fixed inset-0 z-50 flex">
           <div className="absolute inset-0 bg-black/50" onClick={() => setOpen(false)} />
           <aside className="relative w-64 bg-black text-white flex flex-col h-full shadow-2xl">
-            {/* Brand */}
             <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between">
               <div>
                 <p className="text-[10px] text-white/40 uppercase tracking-widest">Find the Way</p>
@@ -168,7 +221,6 @@ export default function AdminNav() {
                 <X size={18} />
               </button>
             </div>
-            {/* User card */}
             <div className="pt-3 pb-1">
               <UserCard />
             </div>

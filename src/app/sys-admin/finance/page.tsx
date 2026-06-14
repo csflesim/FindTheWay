@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react"
 import { TrendingUp, TrendingDown, HelpCircle } from "lucide-react"
+import { INITIAL_ORDERS, OrderDetail } from "../_lib/orders"
 
 const statCards = [
   {
@@ -110,6 +111,9 @@ function Tooltip({ text }: { text: string }) {
 export default function FinancePage() {
   const [from, setFrom] = useState("2026-06-01")
   const [to,   setTo]   = useState("2026-06-30")
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+
+  const selectedOrder = selectedId ? INITIAL_ORDERS.find(o => o.id === selectedId) ?? null : null
 
   function setThisPeriod() { setFrom("2026-06-01"); setTo("2026-06-30") }
   function setLastPeriod()  { setFrom("2026-05-01"); setTo("2026-05-31") }
@@ -234,7 +238,10 @@ export default function FinancePage() {
                 <p className={`text-sm font-medium ${t.amount < 0 ? "text-red-400" : ""}`}>
                   {t.amount < 0 ? "-" : ""}NT$ {Math.abs(t.amount).toLocaleString()}
                 </p>
-                <p className="text-xs text-[#aaa] font-mono">{t.id}</p>
+                <button
+                  onClick={() => setSelectedId(t.id)}
+                  className="text-xs text-black font-mono underline underline-offset-2 decoration-[#ccc] hover:decoration-black transition-colors text-left"
+                >{t.id}</button>
                 <span className={`text-[11px] px-2.5 py-1 rounded-full w-fit ${statusStyle[t.status]}`}>{t.status}</span>
               </div>
             ))}
@@ -248,7 +255,13 @@ export default function FinancePage() {
               <div className="flex items-start justify-between gap-2 mb-1.5">
                 <div>
                   <p className="text-sm font-medium">{t.item}</p>
-                  <p className="text-xs text-[#aaa] mt-0.5">{t.student} · {t.id}</p>
+                  <p className="text-xs text-[#aaa] mt-0.5">
+                    {t.student} ·{" "}
+                    <button
+                      onClick={() => setSelectedId(t.id)}
+                      className="font-mono underline underline-offset-2 decoration-[#ccc] hover:text-black hover:decoration-black transition-colors"
+                    >{t.id}</button>
+                  </p>
                 </div>
                 <span className={`text-[11px] px-2.5 py-1 rounded-full shrink-0 ${statusStyle[t.status]}`}>{t.status}</span>
               </div>
@@ -267,6 +280,13 @@ export default function FinancePage() {
           ))}
         </div>
       </div>
+
+      {selectedOrder && (
+        <OrderDetail
+          order={selectedOrder}
+          onClose={() => setSelectedId(null)}
+        />
+      )}
     </div>
   )
 }
