@@ -51,8 +51,8 @@ export default function CoursesPage() {
             className="bg-white rounded-xl overflow-hidden border border-[#f0f0f0] active:bg-[#fafaf9] transition-colors"
           >
             {course.imgLandscape
-              ? <img src={course.imgLandscape} alt={course.title} className="w-full h-36 object-cover" />
-              : <div className="w-full h-36 bg-[#f2f2f2]" />
+              ? <img src={course.imgLandscape} alt={course.title} className="w-full aspect-[3/1] object-cover" />
+              : <div className="w-full aspect-[3/1] bg-[#f2f2f2]" />
             }
             <div className="p-4">
               <div className="flex items-start justify-between gap-2 mb-1.5">
