@@ -243,11 +243,12 @@ function WeekView({ weekStart, blocks, onNavigate, onDayClick }: {
 }
 
 // ── Month view ────────────────────────────────────────────────
-function MonthView({ year, month, blocks, onNavigate, onDayClick }: {
+function MonthView({ year, month, blocks, onNavigate, onDayClick, selectedDate }: {
   year: number; month: number
   blocks: Block[]
   onNavigate: (y: number, m: number) => void
   onDayClick: (ds: string) => void
+  selectedDate?: string | null
 }) {
   const grid = buildMonthGrid(year, month)
   const courseDates: Record<string, typeof allCourses> = {}
@@ -297,7 +298,9 @@ function MonthView({ year, month, blocks, onNavigate, onDayClick }: {
             <button key={i} onClick={() => onDayClick(ds)}
               className="border-r border-b border-[#f0f0f0] min-h-[60px] p-1 text-left align-top">
               <span className={`text-[11px] font-medium w-5 h-5 flex items-center justify-center rounded-full mb-0.5 ${
-                isToday ? "bg-black text-white" : "text-[#333]"
+                isToday ? "bg-black text-white" :
+                ds === selectedDate ? "ring-1 ring-black text-black" :
+                "text-[#333]"
               }`}>{day}</span>
               {shownCourses.map((c) => (
                 <div key={c.id} className="text-[8px] bg-black text-white rounded px-1 py-0.5 mb-0.5 truncate leading-tight">
@@ -315,6 +318,66 @@ function MonthView({ year, month, blocks, onNavigate, onDayClick }: {
             </button>
           )
         })}
+      </div>
+    </div>
+  )
+}
+
+// ── Month day detail ──────────────────────────────────────────
+function MonthDayDetail({ dateStr, blocks }: { dateStr: string; blocks: Block[] }) {
+  const dayCourses = allCourses.filter(c => c.dateStr === dateStr)
+  const dayBlocks  = blocks.filter(b => b.dateStr === dateStr)
+  const isPast = dateStr <= TODAY
+
+  return (
+    <div className="mx-3 mt-1 pb-4">
+      <div className="flex items-center gap-2 px-1 mb-2">
+        <p className="text-xs font-medium text-[#555]">
+          {dateStr.slice(5).replace("-", "/")} 週{DAYS_SHORT[getDay(dateStr)]}
+        </p>
+        {dateStr === TODAY && (
+          <span className="text-[10px] text-white bg-black px-1.5 py-0.5 rounded-full">今天</span>
+        )}
+      </div>
+
+      {dayCourses.length === 0 && dayBlocks.length === 0 && (
+        <p className="text-sm text-[#ccc] text-center py-6">無課程安排</p>
+      )}
+
+      <div className="flex flex-col gap-2">
+        {dayCourses.map(c => (
+          <div key={c.id} className="bg-white rounded-xl p-4 border border-[#f0f0f0]">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <p className="text-[10px] text-[#aaa]">Studio {c.studio}</p>
+                <h3 className="text-sm font-medium mt-0.5">{c.title}</h3>
+              </div>
+              <span className="text-xs text-[#999] shrink-0">{c.time}</span>
+            </div>
+            <div className="flex items-center justify-between mt-3">
+              <div className="flex items-center gap-2 flex-1">
+                <div className="flex-1 h-1 bg-[#f0f0f0] rounded-full overflow-hidden">
+                  <div className="h-full bg-black rounded-full" style={{ width: `${Math.round(c.enrolled / c.capacity * 100)}%` }} />
+                </div>
+                <span className="text-[10px] text-[#999] shrink-0">{c.enrolled}/{c.capacity} 人</span>
+              </div>
+              {isPast && (
+                <Link href={`/m/teacher/attendance?id=${c.id}`}
+                  className="ml-3 text-[11px] bg-black text-white px-3 py-1 rounded-full shrink-0">
+                  點名
+                </Link>
+              )}
+            </div>
+          </div>
+        ))}
+        {dayBlocks.map(b => (
+          <div key={b.id} className="bg-[#f9f9f9] rounded-xl p-4 border border-[#f0f0f0]">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-[#666]">{b.reason || "請假"}</p>
+              <span className="text-xs text-[#aaa]">{b.startTime}–{b.endTime}</span>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   )
@@ -364,8 +427,9 @@ function ListView() {
 // ── Main ──────────────────────────────────────────────────────
 export default function TeacherCoursesPage() {
   const { blocks } = useAvailability()
-  const [view, setView] = useState<ViewMode>("list")
+  const [view, setView] = useState<ViewMode>("month")
   const [selectedDate, setSelectedDate] = useState(TODAY)
+  const [monthSelectedDate, setMonthSelectedDate] = useState<string | null>(TODAY)
   const [weekStart, setWeekStart] = useState(getWeekStart(TODAY))
   const [monthNav, setMonthNav] = useState({ year: 2026, month: 5 })
 
@@ -379,6 +443,10 @@ export default function TeacherCoursesPage() {
   function handleDayClick(ds: string) {
     setSelectedDate(ds)
     setView("day")
+  }
+
+  function handleMonthDayClick(ds: string) {
+    setMonthSelectedDate(prev => prev === ds ? null : ds)
   }
 
   return (
@@ -409,12 +477,18 @@ export default function TeacherCoursesPage() {
         <WeekView weekStart={weekStart} blocks={blocks} onNavigate={setWeekStart} onDayClick={handleDayClick} />
       )}
       {view === "month" && (
-        <MonthView
-          year={monthNav.year} month={monthNav.month}
-          blocks={blocks}
-          onNavigate={(y, m) => setMonthNav({ year: y, month: m })}
-          onDayClick={handleDayClick}
-        />
+        <>
+          <MonthView
+            year={monthNav.year} month={monthNav.month}
+            blocks={blocks}
+            onNavigate={(y, m) => setMonthNav({ year: y, month: m })}
+            onDayClick={handleMonthDayClick}
+            selectedDate={monthSelectedDate}
+          />
+          {monthSelectedDate && (
+            <MonthDayDetail dateStr={monthSelectedDate} blocks={blocks} />
+          )}
+        </>
       )}
 
       <div className="h-6" />

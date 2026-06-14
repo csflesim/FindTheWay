@@ -28,37 +28,61 @@
 ### 學員專區 `/m`
 
 ```text
-/m               首頁（Banner + 課程分類 + 課程卡列表）
-├── /m/courses   課程列表（分類篩選 + 大圖課程卡）
-├── /m/orders    訂單 & 課堂券（黑底餘額卡 + 報名紀錄）
-└── /m/profile   我的（Profile card + 快速操作 + 學生列表 + 選單）
+/m                       首頁（Banner 輪播廣告圖 + 課程分類 + 課程卡列表）
+├── /m/login             登入 / 註冊
+├── /m/courses           課程列表（分類篩選 + 大圖課程卡）
+│   └── /m/courses/[id]  課程詳情（圖片、資訊卡、授課老師、介紹、重點、報名）
+├── /m/orders            訂單 & 課堂券（黑底餘額卡 + 報名紀錄）
+├── /m/profile           我的（Profile card + 快速操作 + 學員列表 + 選單）
+├── /m/settings          帳號設定（改名、密碼、通知 toggle、LINE 綁定）
+├── /m/students          學員管理
+│   ├── /m/students/[id] 學員詳情
+│   └── /m/students/add  新增學員
+└── /m/tickets
+    ├── /m/tickets/buy      購買課堂券
+    └── /m/tickets/transfer 轉讓課堂券（步驟式流程）
 ```
 
 ### 教師專區 `/m/teacher`
 
 ```text
-/m/teacher               行事曆（清單 / 日 / 週 / 月 四模式）
-├── /m/teacher/attendance  點名（選課程 + 學生狀態切換）
+/m/teacher                  行事曆（清單 / 日 / 週 / 月 四模式）
+├── /m/teacher/login        教師登入
+├── /m/teacher/attendance   點名（出席 / 缺席，缺席可選延期補課 / 不延期）
 ├── /m/teacher/availability 請假管理（不可出席時段列表 + 新增表單）
-└── /m/teacher/profile     教師我的（本月統計 + 出席歷史）
+└── /m/teacher/profile      教師我的（本月統計 + 出席歷史）
 ```
 
 ### 管理後台 `/sys-admin`
 
 ```text
-/sys-admin                總覽 Dashboard（統計卡 + 最新訂單 + 即將開課）
-├── /sys-admin/accounts   帳號管理（會員帳號 + 關聯學生）
-├── /sys-admin/students   學員管理（學生列表 + 課堂券餘額）
-├── /sys-admin/teachers   教師管理（教師列表 + 行事曆 modal）
-├── /sys-admin/courses    課程管理（課程列表 + 報名進度）
-├── /sys-admin/tickets    商品管理（課堂券組合上下架）
-├── /sys-admin/orders     訂單管理（訂單列表 + 狀態）
-├── /sys-admin/finance    帳務管理（收入統計 + 交易明細 + 日期篩選）
-├── /sys-admin/roster     出席管理（依課程分組出席名單）
-└── /sys-admin/system     系統管理（可展開群組）
-    ├── /sys-admin/system/members  人員管理（後台帳號 + 角色）
-    ├── /sys-admin/system/roles    角色管理（權限矩陣）
-    └── /sys-admin/system/params   參數管理（分組可編輯參數）
+/sys-admin                           總覽 Dashboard（統計卡 + 最新訂單 + 即將開課）
+├── /sys-admin/login                 後台登入
+│
+├── [人員管理]
+│   ├── /sys-admin/accounts          帳號管理（會員帳號 + 關聯學生）
+│   ├── /sys-admin/students          學員管理（含與帳號者關係欄位）
+│   └── /sys-admin/teachers          教師管理（頭貼上傳、課表月曆 modal）
+│
+├── [課程管理]
+│   ├── /sys-admin/units             單位管理
+│   ├── /sys-admin/classrooms        教室管理
+│   ├── /sys-admin/courses           課程管理（內部/外部、圖片、介紹、重點）
+│   └── /sys-admin/roster            出席管理（出席/缺席/延期）
+│
+├── [經營管理]
+│   ├── /sys-admin/tickets           商品管理（課堂券組合上下架）
+│   ├── /sys-admin/orders            訂單管理（訂單列表 + 狀態）
+│   ├── /sys-admin/vouchers          卡券管理
+│   └── /sys-admin/finance           帳務管理（收入統計 + 交易明細 + 日期篩選）
+│
+├── [展示管理]
+│   └── /sys-admin/display/mobile-banner  手機版廣告圖（排序、啟停用、上傳）
+│
+└── [系統管理]
+    ├── /sys-admin/system/members    人員管理（後台帳號 + 角色）
+    ├── /sys-admin/system/roles      角色管理（權限矩陣）
+    └── /sys-admin/system/params     參數管理（分組可編輯參數）
 ```
 
 ---
@@ -80,40 +104,62 @@ Findtheway/
 │       │
 │       ├── m/                          # 學員專區
 │       │   ├── layout.tsx              # 含 MobileNav（/m/teacher 路徑下自動隱藏）
-│       │   ├── page.tsx
-│       │   ├── courses/page.tsx
+│       │   ├── page.tsx                # 首頁（Banner 輪播 + 課程列表）
+│       │   ├── login/page.tsx
+│       │   ├── courses/
+│       │   │   ├── page.tsx
+│       │   │   └── [id]/page.tsx
 │       │   ├── orders/page.tsx
 │       │   ├── profile/page.tsx
+│       │   ├── settings/page.tsx
+│       │   ├── students/
+│       │   │   ├── page.tsx
+│       │   │   ├── [id]/page.tsx
+│       │   │   └── add/page.tsx
+│       │   ├── tickets/
+│       │   │   ├── buy/page.tsx
+│       │   │   └── transfer/page.tsx
+│       │   ├── _lib/
+│       │   │   ├── courses.ts          # 課程 mock（5 堂，含圖片路徑、desc、highlights）
+│       │   │   └── students.ts         # 學員 mock（本人 3 券、賴小柏 7 券、賴小紫 1 券）
 │       │   ├── components/
 │       │   │   └── MobileNav.tsx
 │       │   └── teacher/                # 教師專區
-│       │       ├── layout.tsx          # 含 AvailabilityProvider + TeacherNav
+│       │       ├── layout.tsx          # 含 AvailabilityProvider + TeacherShell
 │       │       ├── page.tsx            # 行事曆（清單/日/週/月）
-│       │       ├── attendance/page.tsx
+│       │       ├── login/page.tsx
+│       │       ├── attendance/page.tsx # 出席/缺席＋延期/不延期
 │       │       ├── availability/page.tsx
 │       │       ├── profile/page.tsx
-│       │       ├── components/
-│       │       │   └── TeacherNav.tsx
-│       │       └── context/
-│       │           └── AvailabilityProvider.tsx
+│       │       └── components/
+│       │           └── TeacherShell.tsx
 │       │
 │       └── sys-admin/                  # 管理後台
 │           ├── layout.tsx              # Sidebar + main
 │           ├── page.tsx                # Dashboard
+│           ├── login/page.tsx
 │           ├── accounts/page.tsx
-│           ├── students/page.tsx
-│           ├── teachers/page.tsx       # 含行事曆 modal（client component）
-│           ├── courses/page.tsx
+│           ├── students/page.tsx       # 含與帳號者關係欄位
+│           ├── teachers/page.tsx       # 含頭貼上傳、行事曆 modal
+│           ├── units/page.tsx
+│           ├── classrooms/page.tsx
+│           ├── courses/page.tsx        # 含圖片上傳、課程介紹、課程重點
 │           ├── tickets/page.tsx
 │           ├── orders/page.tsx
-│           ├── finance/page.tsx        # 含日期篩選（client component）
-│           ├── roster/page.tsx
+│           ├── vouchers/page.tsx
+│           ├── finance/page.tsx
+│           ├── roster/page.tsx         # 出席/缺席/延期
+│           ├── display/
+│           │   └── mobile-banner/page.tsx  # 手機版廣告圖管理
 │           ├── system/
 │           │   ├── members/page.tsx
 │           │   ├── roles/page.tsx
 │           │   └── params/page.tsx
+│           ├── _lib/
+│           │   └── orders.tsx          # 訂單 mock（賴大紫帳號餘額）
 │           └── components/
-│               └── AdminNav.tsx        # 響應式側欄 + 系統管理可展開群組
+│               ├── AdminNav.tsx        # 響應式側欄（5 群組可摺疊）
+│               └── AdminShell.tsx
 └── public/
 ```
 

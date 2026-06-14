@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from "react"
-import { Plus, Search, X, Trash2, ClipboardList, ChevronLeft, ChevronRight, Upload } from "lucide-react"
+import { Plus, Search, X, Trash2, ClipboardList, ChevronLeft, ChevronRight, Upload, CalendarDays } from "lucide-react"
 
 type AttendRecord = { name: string; status: "出席" | "請假" | "缺席" }
 type Session = { date: string; records: AttendRecord[] }
@@ -114,6 +114,129 @@ function buildSchedule(f: { scheduleType: string; scheduleDay: string; scheduleD
 }
 
 const TEACHERS = ["小紫老師", "明德老師"]
+
+// ── Teacher schedule data ────────────────────────────
+type TCourse = { title: string; time: string; studio: string }
+type TSchedule = Record<string, TCourse[]>
+
+const TEACHER_SCHEDULE: Record<string, TSchedule> = {
+  "小紫老師": {
+    "2026-06-07": [{ title: "兒童創意素描",  time: "14:00–15:30", studio: "A" }],
+    "2026-06-08": [{ title: "親子藝術探索",  time: "14:00–15:30", studio: "B" }],
+    "2026-06-14": [{ title: "兒童創意素描",  time: "14:00–15:30", studio: "A" }],
+    "2026-06-15": [{ title: "親子藝術探索",  time: "14:00–15:30", studio: "B" }],
+    "2026-06-21": [{ title: "兒童創意素描",  time: "14:00–15:30", studio: "A" }],
+    "2026-06-22": [{ title: "親子藝術探索",  time: "14:00–15:30", studio: "B" }],
+    "2026-06-28": [{ title: "兒童創意素描",  time: "14:00–15:30", studio: "A" }],
+    "2026-06-29": [{ title: "親子藝術探索",  time: "14:00–15:30", studio: "B" }],
+  },
+  "明德老師": {
+    "2026-06-06": [{ title: "基礎水彩入門",  time: "10:00–12:00", studio: "A" }],
+    "2026-06-07": [{ title: "成人油畫工作坊", time: "19:00–21:00", studio: "B" }],
+    "2026-06-10": [{ title: "水墨入門體驗",  time: "19:00–21:00", studio: "C" }],
+    "2026-06-13": [{ title: "基礎水彩入門",  time: "10:00–12:00", studio: "A" }],
+    "2026-06-14": [{ title: "成人油畫工作坊", time: "19:00–21:00", studio: "B" }],
+    "2026-06-17": [{ title: "水墨入門體驗",  time: "19:00–21:00", studio: "C" }],
+    "2026-06-20": [{ title: "基礎水彩入門",  time: "10:00–12:00", studio: "A" }],
+    "2026-06-21": [{ title: "成人油畫工作坊", time: "19:00–21:00", studio: "B" }],
+    "2026-06-24": [{ title: "水墨入門體驗",  time: "19:00–21:00", studio: "C" }],
+    "2026-06-27": [{ title: "基礎水彩入門",  time: "10:00–12:00", studio: "A" }],
+    "2026-06-28": [{ title: "成人油畫工作坊", time: "19:00–21:00", studio: "B" }],
+  },
+}
+
+const WEEKDAYS_SHORT = ["日","一","二","三","四","五","六"]
+function tpad(n: number) { return String(n).padStart(2,"0") }
+function dkey(y: number, m: number, d: number) { return `${y}-${tpad(m+1)}-${tpad(d)}` }
+
+function TeacherScheduleModal({ name, onClose }: { name: string; onClose: () => void }) {
+  const [year, setYear] = useState(2026)
+  const [month, setMonth] = useState(5)
+  const [sel, setSel] = useState<string | null>(null)
+  const schedule = TEACHER_SCHEDULE[name] ?? {}
+  const firstDay = new Date(year, month, 1).getDay()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const cells: (number | null)[] = [...Array(firstDay).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)]
+  while (cells.length % 7 !== 0) cells.push(null)
+
+  function prev() { if (month === 0) { setYear(y => y-1); setMonth(11) } else setMonth(m => m-1); setSel(null) }
+  function next() { if (month === 11) { setYear(y => y+1); setMonth(0)  } else setMonth(m => m+1); setSel(null) }
+
+  const selCourses = sel ? (schedule[sel] ?? []) : []
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/50" />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm max-h-[85vh] flex flex-col overflow-hidden"
+        onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#f0f0f0] shrink-0">
+          <div>
+            <p className="text-sm font-medium">{name} 的課表</p>
+          </div>
+          <button onClick={onClose} className="text-[#bbb] hover:text-black"><X size={18} /></button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 pb-4">
+          {/* Month nav */}
+          <div className="flex items-center justify-between px-5 pt-4 pb-2">
+            <button onClick={prev} className="p-1.5 rounded-lg hover:bg-[#f5f5f5]"><ChevronLeft size={15} /></button>
+            <p className="text-sm font-medium">{year} 年 {month + 1} 月</p>
+            <button onClick={next} className="p-1.5 rounded-lg hover:bg-[#f5f5f5]"><ChevronRight size={15} /></button>
+          </div>
+
+          {/* Weekday headers */}
+          <div className="grid grid-cols-7 px-4 mb-1">
+            {WEEKDAYS_SHORT.map(d => <div key={d} className="text-center text-[10px] text-[#bbb] py-1">{d}</div>)}
+          </div>
+
+          {/* Calendar grid */}
+          <div className="grid grid-cols-7 px-4 gap-0.5">
+            {cells.map((day, i) => {
+              if (!day) return <div key={i} />
+              const k = dkey(year, month, day)
+              const courses = schedule[k] ?? []
+              const isSelected = sel === k
+              return (
+                <button key={i} onClick={() => setSel(isSelected ? null : k)}
+                  className={`rounded-xl p-1 min-h-[44px] flex flex-col items-center transition-colors ${
+                    isSelected ? "bg-black text-white" : courses.length ? "bg-[#f5f5f5] hover:bg-[#ebebeb]" : "hover:bg-[#f9f9f9]"
+                  }`}>
+                  <span className={`text-[11px] font-medium mb-0.5 ${isSelected ? "text-white" : courses.length ? "text-black" : "text-[#aaa]"}`}>{day}</span>
+                  {courses.slice(0, 1).map((c, ci) => (
+                    <span key={ci} className={`w-full text-center text-[8px] leading-tight px-0.5 py-0.5 rounded truncate ${
+                      isSelected ? "bg-white/20 text-white" : "bg-black text-white"
+                    }`}>{c.time.split("–")[0]}</span>
+                  ))}
+                  {courses.length > 1 && <span className={`text-[8px] ${isSelected ? "text-white/70" : "text-[#999]"}`}>+{courses.length - 1}</span>}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Selected day detail */}
+          {sel && (
+            <div className="mx-4 mt-3 rounded-xl border border-[#f0f0f0] overflow-hidden">
+              <div className="px-4 py-2.5 bg-[#f9f9f9] border-b border-[#f0f0f0]">
+                <p className="text-xs font-medium text-[#666]">{sel.replace(/(\d{4})-(\d{2})-(\d{2})/, "$2/$3")}</p>
+              </div>
+              {selCourses.length === 0 ? (
+                <p className="px-4 py-3 text-sm text-[#aaa]">無課程</p>
+              ) : selCourses.map((c, i) => (
+                <div key={i} className="flex items-center justify-between px-4 py-3 border-t first:border-t-0 border-[#f5f5f5]">
+                  <div>
+                    <p className="text-sm font-medium">{c.title}</p>
+                    <p className="text-xs text-[#999] mt-0.5">{c.time} · Studio {c.studio}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
 const STUDIOS = ["A", "B", "C"]
 const TICKET_TYPES = ["通用課堂券", "兒童課堂券", "成人課堂券", "體驗券"]
 const UNITS = [
@@ -164,6 +287,60 @@ const EMPTY_FORM = {
   imgSquare: "", imgLandscape: "",
   partner: "", subUnit: "", location: "", notes: "",
   desc: "", highlights: "",
+}
+
+// ── Teacher multi-select (with schedule modal) ───────
+
+function TeacherMultiSelect({ selected, onChange }: {
+  selected: string[]
+  onChange: (v: string[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [scheduleFor, setScheduleFor] = useState<string | null>(null)
+
+  function toggle(o: string) {
+    onChange(selected.includes(o) ? selected.filter(s => s !== o) : [...selected, o])
+  }
+
+  return (
+    <>
+      <div className="relative">
+        <button type="button" onClick={() => setOpen(v => !v)}
+          className="w-full px-3 py-2.5 text-sm bg-[#fafaf9] border border-[#f0f0f0] rounded-xl outline-none text-left flex items-center justify-between hover:border-black transition-colors">
+          <span className={selected.length === 0 ? "text-[#bbb]" : ""}>
+            {selected.length === 0 ? "選擇教師…" : selected.join("、")}
+          </span>
+          <ChevronRight size={14} className={`text-[#bbb] transition-transform ${open ? "rotate-90" : ""}`} />
+        </button>
+        {open && (
+          <div className="absolute z-20 mt-1 w-full bg-white border border-[#f0f0f0] rounded-xl shadow-lg overflow-hidden">
+            <div className="max-h-48 overflow-y-auto">
+              {TEACHERS.map(o => (
+                <div key={o} className="flex items-center px-4 py-2.5 hover:bg-[#f9f9f9] transition-colors">
+                  <button type="button" onClick={() => toggle(o)} className="flex items-center gap-3 flex-1 text-left text-sm">
+                    <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${selected.includes(o) ? "bg-black border-black" : "border-[#ddd]"}`}>
+                      {selected.includes(o) && <svg width="9" height="7" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3.5 6L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                    </span>
+                    {o}
+                  </button>
+                  <button type="button"
+                    onClick={e => { e.stopPropagation(); setScheduleFor(o); setOpen(false) }}
+                    className="text-[#bbb] hover:text-black transition-colors ml-2 shrink-0 flex items-center gap-1 text-[11px]">
+                    <CalendarDays size={13} />課表
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="p-2 border-t border-[#f5f5f5]">
+              <button type="button" onClick={() => setOpen(false)}
+                className="w-full py-1.5 text-xs text-[#999] hover:text-black transition-colors">確認</button>
+            </div>
+          </div>
+        )}
+      </div>
+      {scheduleFor && <TeacherScheduleModal name={scheduleFor} onClose={() => setScheduleFor(null)} />}
+    </>
+  )
 }
 
 // ── Multi-select dropdown ────────────────────────────
@@ -548,11 +725,9 @@ export default function CoursesPage() {
               </Field>
 
               <Field label="教師">
-                <MultiSelect
-                  options={TEACHERS}
+                <TeacherMultiSelect
                   selected={form.teachers}
                   onChange={v => setForm(f => ({ ...f, teachers: v }))}
-                  placeholder="選擇教師…"
                 />
               </Field>
 
