@@ -10,10 +10,11 @@ const TEACHER_PHOTOS: Record<string, string> = {
 }
 
 const BANNERS = [
-  { id: 1, img: "/image/banner1.png",            link: "" },
-  { id: 2, img: "/image/watercolor1200x400.png", link: "/m/courses/1" },
-  { id: 3, img: "/image/sketch1200x400.png",     link: "/m/courses/2" },
-  { id: 4, img: "/image/oilpainting1200x400.png", link: "/m/courses/3" },
+  { id: 1, img: "/image/banner2.png",            link: "" },
+  { id: 2, img: "/image/banner1.png",            link: "" },
+  { id: 3, img: "/image/watercolor1200x400.png", link: "/m/courses/1" },
+  { id: 4, img: "/image/sketch1200x400.png",     link: "/m/courses/2" },
+  { id: 5, img: "/image/oilpainting1200x400.png", link: "/m/courses/3" },
 ]
 
 function BannerCarousel() {

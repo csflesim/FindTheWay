@@ -12,9 +12,10 @@ type Banner = {
 }
 
 const INITIAL_BANNERS: Banner[] = [
-  { id: 1, img: "/image/banner1.png",            title: "廣告 Banner 1",  link: "",              active: true },
-  { id: 2, img: "/image/watercolor1200x400.png", title: "基礎水彩入門",   link: "/m/courses/1", active: true },
-  { id: 3, img: "/image/sketch1200x400.png",     title: "兒童創意素描",   link: "/m/courses/2", active: true },
+  { id: 1, img: "/image/banner2.png",            title: "廣告 Banner 2",  link: "",              active: true },
+  { id: 2, img: "/image/banner1.png",            title: "廣告 Banner 1",  link: "",              active: true },
+  { id: 3, img: "/image/watercolor1200x400.png", title: "基礎水彩入門",   link: "/m/courses/1", active: true },
+  { id: 4, img: "/image/sketch1200x400.png",     title: "兒童創意素描",   link: "/m/courses/2", active: true },
 ]
 
 function Drawer({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
