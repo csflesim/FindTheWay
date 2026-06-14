@@ -112,13 +112,13 @@ export default function VouchersPage() {
 
       {/* Desktop table */}
       <div className="hidden md:block bg-white rounded-xl border border-[#f0f0f0] overflow-hidden">
-        <div className="grid grid-cols-[1.4fr_0.9fr_0.9fr_1.2fr_1fr_1fr] gap-4 px-5 py-3 border-b border-[#f5f5f5] text-[11px] text-[#aaa] uppercase tracking-widest">
-          <span>券號</span><span>學員</span><span>所屬訂單</span><span>課程組合</span><span>使用情況</span><span>異動時間</span>
+        <div className="grid grid-cols-[1.4fr_0.9fr_0.9fr_1.2fr_1fr_0.9fr_0.9fr] gap-4 px-5 py-3 border-b border-[#f5f5f5] text-[11px] text-[#aaa] uppercase tracking-widest">
+          <span>券號</span><span>學員</span><span>所屬訂單</span><span>課程組合</span><span>使用情況</span><span>異動時間</span><span>異動人</span>
         </div>
         <div className="divide-y divide-[#f5f5f5]">
           {filtered.length === 0 && <p className="px-5 py-6 text-sm text-[#ccc]">查無課堂券</p>}
           {filtered.map(({ ticket: t, order: o }) => (
-            <div key={t.no} className="grid grid-cols-[1.4fr_0.9fr_0.9fr_1.2fr_1fr_1fr] gap-4 items-center px-5 py-3.5">
+            <div key={t.no} className="grid grid-cols-[1.4fr_0.9fr_0.9fr_1.2fr_1fr_0.9fr_0.9fr] gap-4 items-center px-5 py-3.5">
               <p className="text-xs font-mono text-[#555]">{t.no}</p>
               <p className="text-sm">{o.student}</p>
               <button
@@ -130,6 +130,7 @@ export default function VouchersPage() {
                 {ticketLabel(t)}
               </span>
               <p className="text-xs text-[#999]">{t.changedAt ?? "—"}</p>
+              <p className="text-xs text-[#999]">{t.changedBy ?? "—"}</p>
             </div>
           ))}
         </div>
@@ -156,7 +157,7 @@ export default function VouchersPage() {
                   className="font-mono underline underline-offset-2 decoration-[#ccc] hover:text-black hover:decoration-black transition-colors"
                 >{o.id}</button>
               </p>
-              <p className="text-xs text-[#aaa]">{t.changedAt ?? "—"}</p>
+              <p className="text-xs text-[#aaa]">{t.changedAt ? `${t.changedAt} · ${t.changedBy ?? "—"}` : "—"}</p>
             </div>
           </div>
         ))}

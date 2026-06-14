@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from "react"
-import { TrendingUp, TrendingDown, HelpCircle } from "lucide-react"
+import { TrendingUp, TrendingDown, HelpCircle, Plus, X } from "lucide-react"
 import { INITIAL_ORDERS, OrderDetail } from "../_lib/orders"
 
 const statCards = [
@@ -58,7 +58,11 @@ const monthlyRevenue = [
   { month: "6月", amount: 48600 },
 ]
 
-const transactions = [
+type TxType = "收入" | "退款"
+type TxStatus = "已入帳" | "待確認" | "已退款"
+type Transaction = { id: string; date: string; type: TxType; item: string; student: string; amount: number; status: TxStatus }
+
+const INITIAL_TRANSACTIONS: Transaction[] = [
   { id: "ORD-0041", date: "06/13", type: "收入", item: "10堂體驗包", student: "鄭大德", amount:   9800, status: "已入帳" },
   { id: "ORD-0040", date: "06/12", type: "收入", item: "5堂精選包",  student: "賴大紫", amount:   5500, status: "已入帳" },
   { id: "ORD-0039", date: "06/10", type: "收入", item: "單堂試課券", student: "鄭大德", amount:   1200, status: "已入帳" },
@@ -66,6 +70,10 @@ const transactions = [
   { id: "ORD-0037", date: "06/05", type: "收入", item: "10堂體驗包", student: "鄭大德", amount:   9800, status: "已入帳" },
   { id: "ORD-0036", date: "06/01", type: "退款", item: "20堂年繳包", student: "賴大紫", amount: -18000, status: "已退款" },
 ]
+
+const EMPTY_TX: Omit<Transaction, "id"> = {
+  date: "", type: "收入", item: "", student: "", amount: 0, status: "已入帳",
+}
 
 const statusStyle: Record<string, string> = {
   "已入帳": "bg-black text-white",
@@ -112,8 +120,20 @@ export default function FinancePage() {
   const [from, setFrom] = useState("2026-06-01")
   const [to,   setTo]   = useState("2026-06-30")
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [transactions, setTransactions] = useState<Transaction[]>(INITIAL_TRANSACTIONS)
+  const [addOpen, setAddOpen] = useState(false)
+  const [form, setForm] = useState<Omit<Transaction, "id">>(EMPTY_TX)
 
   const selectedOrder = selectedId ? INITIAL_ORDERS.find(o => o.id === selectedId) ?? null : null
+
+  function saveAdd() {
+    if (!form.date || !form.item || !form.student || !form.amount) return
+    const newId = `MAN-${String(Date.now()).slice(-4)}`
+    const amount = form.type === "退款" ? -Math.abs(form.amount) : Math.abs(form.amount)
+    setTransactions(list => [{ ...form, id: newId, amount }, ...list])
+    setAddOpen(false)
+    setForm(EMPTY_TX)
+  }
 
   function setThisPeriod() { setFrom("2026-06-01"); setTo("2026-06-30") }
   function setLastPeriod()  { setFrom("2026-05-01"); setTo("2026-05-31") }
@@ -219,7 +239,13 @@ export default function FinancePage() {
 
       {/* Transaction list */}
       <div>
-        <p className="text-[11px] text-[#aaa] uppercase tracking-widest mb-3">交易明細</p>
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-[11px] text-[#aaa] uppercase tracking-widest">交易明細</p>
+          <button onClick={() => { setForm(EMPTY_TX); setAddOpen(true) }}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-black text-white rounded-xl hover:bg-[#222] transition-colors">
+            <Plus size={12} />新增交易明細
+          </button>
+        </div>
 
         {/* Desktop table */}
         <div className="hidden md:block bg-white rounded-xl border border-[#f0f0f0] overflow-hidden">
@@ -286,6 +312,84 @@ export default function FinancePage() {
           order={selectedOrder}
           onClose={() => setSelectedId(null)}
         />
+      )}
+
+      {/* Add transaction drawer */}
+      {addOpen && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setAddOpen(false)} />
+          <aside className="relative w-full max-w-md bg-white h-full flex flex-col shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-[#f0f0f0] shrink-0">
+              <h2 className="text-base font-medium">新增交易明細</h2>
+              <button onClick={() => setAddOpen(false)} className="text-[#bbb] hover:text-black transition-colors">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4">
+              {/* 日期 */}
+              <div>
+                <label className="text-xs text-[#999] mb-1.5 block">日期</label>
+                <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
+                  className="w-full px-3 py-2.5 text-sm bg-[#fafaf9] border border-[#f0f0f0] rounded-xl outline-none focus:border-black transition-colors" />
+              </div>
+
+              {/* 類型 */}
+              <div>
+                <label className="text-xs text-[#999] mb-1.5 block">類型</label>
+                <div className="flex gap-2">
+                  {(["收入", "退款"] as TxType[]).map(t => (
+                    <button key={t} type="button" onClick={() => setForm(f => ({ ...f, type: t }))}
+                      className={`flex-1 py-2.5 text-sm rounded-xl border transition-colors ${
+                        form.type === t ? "bg-black text-white border-black" : "bg-[#fafaf9] border-[#f0f0f0] text-[#666] hover:border-[#ccc]"
+                      }`}>{t}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 項目 */}
+              <div>
+                <label className="text-xs text-[#999] mb-1.5 block">項目</label>
+                <input placeholder="例：10堂體驗包" value={form.item} onChange={e => setForm(f => ({ ...f, item: e.target.value }))}
+                  className="w-full px-3 py-2.5 text-sm bg-[#fafaf9] border border-[#f0f0f0] rounded-xl outline-none focus:border-black transition-colors" />
+              </div>
+
+              {/* 學員 */}
+              <div>
+                <label className="text-xs text-[#999] mb-1.5 block">學員</label>
+                <input placeholder="學員姓名" value={form.student} onChange={e => setForm(f => ({ ...f, student: e.target.value }))}
+                  className="w-full px-3 py-2.5 text-sm bg-[#fafaf9] border border-[#f0f0f0] rounded-xl outline-none focus:border-black transition-colors" />
+              </div>
+
+              {/* 金額 */}
+              <div>
+                <label className="text-xs text-[#999] mb-1.5 block">金額（NT$）</label>
+                <input type="number" min="0" placeholder="0" value={form.amount || ""} onChange={e => setForm(f => ({ ...f, amount: Number(e.target.value) }))}
+                  className="w-full px-3 py-2.5 text-sm bg-[#fafaf9] border border-[#f0f0f0] rounded-xl outline-none focus:border-black transition-colors" />
+              </div>
+
+              {/* 狀態 */}
+              <div>
+                <label className="text-xs text-[#999] mb-1.5 block">狀態</label>
+                <div className="flex gap-2">
+                  {(["已入帳", "待確認", "已退款"] as TxStatus[]).map(s => (
+                    <button key={s} type="button" onClick={() => setForm(f => ({ ...f, status: s }))}
+                      className={`flex-1 py-2.5 text-xs rounded-xl border transition-colors ${
+                        form.status === s ? "bg-black text-white border-black" : "bg-[#fafaf9] border-[#f0f0f0] text-[#666] hover:border-[#ccc]"
+                      }`}>{s}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-[#f0f0f0] shrink-0">
+              <button onClick={saveAdd}
+                className="w-full py-2.5 text-sm bg-black text-white rounded-xl hover:bg-[#222] transition-colors">
+                新增
+              </button>
+            </div>
+          </aside>
+        </div>
       )}
     </div>
   )
