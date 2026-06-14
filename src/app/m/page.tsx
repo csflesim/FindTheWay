@@ -1,12 +1,70 @@
 'use client'
 
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import { COURSES, CATEGORIES } from "./_lib/courses"
 
 const TEACHER_PHOTOS: Record<string, string> = {
   "小紫老師": "/image/purple.jpg",
   "明德老師": "/image/mingdez.jpg",
+}
+
+const BANNERS = [
+  { id: 1, img: "/image/banner1.png",            link: "" },
+  { id: 2, img: "/image/watercolor1200x400.png", link: "/m/courses/1" },
+  { id: 3, img: "/image/sketch1200x400.png",     link: "/m/courses/2" },
+  { id: 4, img: "/image/oilpainting1200x400.png", link: "/m/courses/3" },
+]
+
+function BannerCarousel() {
+  const [idx, setIdx] = useState(0)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  function startTimer() {
+    timerRef.current = setInterval(() => {
+      setIdx(i => (i + 1) % BANNERS.length)
+    }, 3500)
+  }
+
+  useEffect(() => {
+    startTimer()
+    return () => { if (timerRef.current) clearInterval(timerRef.current) }
+  }, [])
+
+  function go(n: number) {
+    if (timerRef.current) clearInterval(timerRef.current)
+    setIdx((idx + n + BANNERS.length) % BANNERS.length)
+    startTimer()
+  }
+
+  return (
+    <div className="mx-4 mt-4 rounded-2xl overflow-hidden relative">
+      {/* Slides */}
+      <div
+        className="flex transition-transform duration-500 ease-in-out"
+        style={{ transform: `translateX(-${idx * 100}%)` }}
+      >
+        {BANNERS.map(b => (
+          <Link key={b.id} href={b.link} className="shrink-0 w-full">
+            <img src={b.img} alt="" className="w-full aspect-[3/1] object-cover" />
+          </Link>
+        ))}
+      </div>
+
+      {/* Tap zones */}
+      <button onClick={() => go(-1)} className="absolute left-0 top-0 h-full w-1/4" />
+      <button onClick={() => go(1)}  className="absolute right-0 top-0 h-full w-1/4" />
+
+      {/* Dots */}
+      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+        {BANNERS.map((_, i) => (
+          <button key={i} onClick={() => { if (timerRef.current) clearInterval(timerRef.current); setIdx(i); startTimer() }}
+            className={`rounded-full transition-all duration-300 ${i === idx ? "w-4 h-1.5 bg-white" : "w-1.5 h-1.5 bg-white/50"}`}
+          />
+        ))}
+      </div>
+    </div>
+  )
 }
 
 export default function MobileHomePage() {
@@ -32,20 +90,7 @@ export default function MobileHomePage() {
         </Link>
       </header>
 
-      {/* Hero Banner */}
-      <div className="mx-4 mt-4 bg-black text-white rounded-2xl p-5">
-        <p className="text-[10px] text-white/50 mb-1 tracking-widest uppercase">Welcome</p>
-        <p className="text-xl font-serif leading-snug">忙碌不迷路<br />藝術工作坊</p>
-        <p className="text-xs text-white/50 mt-3 leading-relaxed">
-          登入後可查看課堂券餘額<br />與課程報名紀錄
-        </p>
-        <Link
-          href="/m/login"
-          className="inline-block mt-4 text-[11px] bg-white text-black px-4 py-1.5 rounded-full"
-        >
-          立即登入
-        </Link>
-      </div>
+      <BannerCarousel />
 
       {/* Courses */}
       <div className="mt-6 px-4">
