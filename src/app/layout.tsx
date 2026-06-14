@@ -17,6 +17,12 @@ export const metadata: Metadata = {
   description: "A dedicated studio exploring expression, form, and texture through bespoke art and visual storytelling.",
   icons: {
     icon: "/image/logo.png",
+    apple: "/apple-touch-icon.png",
+  },
+  appleWebApp: {
+    capable: true,
+    title: "Find the Way",
+    statusBarStyle: "default",
   },
 };
 
