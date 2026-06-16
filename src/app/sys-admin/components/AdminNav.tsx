@@ -7,7 +7,7 @@ import {
   LayoutDashboard, BookOpen, Ticket,
   Users, ShoppingBag, ClipboardList,
   LogOut, Menu, X, UserCircle, GraduationCap, Wallet,
-  Settings2, UserCog, Shield, SlidersHorizontal, ChevronDown, Bell, Building2, LayoutGrid, CreditCard, Smartphone,
+  Settings2, UserCog, Shield, SlidersHorizontal, ChevronDown, Bell, Building2, LayoutGrid, CreditCard, Smartphone, MonitorPlay,
 } from "lucide-react"
 
 const MOCK_USER = {
@@ -35,8 +35,9 @@ const navGroups: { group: string; items: NavItem[] }[] = [
     items: [
       { href: "/sys-admin/units",      label: "單位管理", icon: Building2 },
       { href: "/sys-admin/classrooms", label: "教室管理", icon: LayoutGrid },
-      { href: "/sys-admin/courses",    label: "課堂管理", icon: BookOpen },
-      { href: "/sys-admin/roster",     label: "出席管理", icon: ClipboardList },
+      { href: "/sys-admin/courses",        label: "課堂管理", icon: BookOpen },
+      { href: "/sys-admin/online-courses", label: "線上課程", icon: MonitorPlay },
+      { href: "/sys-admin/roster",         label: "出席管理", icon: ClipboardList },
     ],
   },
   {
