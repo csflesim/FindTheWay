@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from "react"
-import AdminShell from "../components/AdminShell"
 import { Send, Users, User, Clock, CheckCircle2, XCircle, Loader2 } from "lucide-react"
 
 type MsgType = "text" | "image"
@@ -88,8 +87,7 @@ export default function LineMessagesPage() {
   }
 
   return (
-    <AdminShell>
-      <div className="p-4 md:p-6 w-full max-w-3xl">
+    <div className="p-4 md:p-6 w-full max-w-3xl">
         <div className="mb-5">
           <p className="text-[11px] text-[#aaa] uppercase tracking-widest">Notifications / LINE</p>
           <h1 className="text-lg md:text-xl font-medium mt-0.5 flex items-center gap-2">
@@ -218,7 +216,6 @@ export default function LineMessagesPage() {
             )}
           </div>
         </div>
-      </div>
-    </AdminShell>
+    </div>
   )
 }
