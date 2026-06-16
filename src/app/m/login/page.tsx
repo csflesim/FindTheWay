@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from "react"
+import { useState, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Eye, EyeOff, ArrowLeft } from "lucide-react"
@@ -17,7 +17,7 @@ const LINE_ICON = (
   </svg>
 )
 
-export default function LoginPage() {
+function LoginContent() {
   const [tab, setTab]           = useState<"login" | "register">("login")
   const [showPw, setShowPw]     = useState(false)
   const [showPw2, setShowPw2]   = useState(false)
@@ -202,5 +202,13 @@ export default function LoginPage() {
         © 忙碌不迷路藝術工作坊
       </p>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginContent />
+    </Suspense>
   )
 }
