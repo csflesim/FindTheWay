@@ -36,10 +36,10 @@ export const ONLINE_COURSES: OnlineCourse[] = [
     publishDate: "2025-03-12", published: true, coverUrl: "",
     recommendedIds: [2, 3], categories: ["直播營銷", "實體零售"],
     sections: [
-      { id: 1, title: "電商銷售團隊配置", videoUrl: "https://www.youtube.com/watch?v=xssFGErVuqw", label: "策略課", sort: 1, freePreview: true },
-      { id: 2, title: "內容與廣告配合",   videoUrl: "https://www.youtube.com/watch?v=xssFGErVuqw", label: "視頻課程", sort: 2, freePreview: false },
-      { id: 3, title: "數據複盤技巧",     videoUrl: "https://www.youtube.com/watch?v=xssFGErVuqw", label: "視頻課程", sort: 3, freePreview: false },
-      { id: 4, title: "轉化優化實戰",     videoUrl: "https://www.youtube.com/watch?v=xssFGErVuqw", label: "視頻課程", sort: 4, freePreview: false },
+      { id: 1, title: "電商銷售團隊配置", videoUrl: "https://www.youtube.com/watch?v=SAD4J0DzNdQ", label: "策略課", sort: 1, freePreview: true },
+      { id: 2, title: "內容與廣告配合",   videoUrl: "https://www.youtube.com/watch?v=SAD4J0DzNdQ", label: "視頻課程", sort: 2, freePreview: false },
+      { id: 3, title: "數據複盤技巧",     videoUrl: "https://www.youtube.com/watch?v=SAD4J0DzNdQ", label: "視頻課程", sort: 3, freePreview: false },
+      { id: 4, title: "轉化優化實戰",     videoUrl: "https://www.youtube.com/watch?v=SAD4J0DzNdQ", label: "視頻課程", sort: 4, freePreview: false },
     ],
   },
   {
