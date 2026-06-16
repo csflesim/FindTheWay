@@ -3,10 +3,16 @@ export type CourseType = "免費課程" | "系列課"
 export type Section = {
   id: number
   title: string
-  videoUrl: string
+  vid: string   // XOR-base64 encoded video ID — use decVid() to decode
   label: string
   sort: number
   freePreview: boolean
+}
+
+const _K = [70, 84, 87, 50, 48, 50, 53]
+export function decVid(e: string): string {
+  const raw = atob(e)
+  return raw.split("").map((c, i) => String.fromCharCode(c.charCodeAt(0) ^ _K[i % _K.length])).join("")
 }
 
 export type OnlineCourse = {
@@ -36,10 +42,10 @@ export const ONLINE_COURSES: OnlineCourse[] = [
     publishDate: "2025-03-12", published: true, coverUrl: "",
     recommendedIds: [2, 3], categories: ["直播營銷", "實體零售"],
     sections: [
-      { id: 1, title: "電商銷售團隊配置", videoUrl: "https://www.youtube.com/watch?v=SAD4J0DzNdQ", label: "策略課", sort: 1, freePreview: true },
-      { id: 2, title: "內容與廣告配合",   videoUrl: "https://www.youtube.com/watch?v=SAD4J0DzNdQ", label: "視頻課程", sort: 2, freePreview: false },
-      { id: 3, title: "數據複盤技巧",     videoUrl: "https://www.youtube.com/watch?v=SAD4J0DzNdQ", label: "視頻課程", sort: 3, freePreview: false },
-      { id: 4, title: "轉化優化實戰",     videoUrl: "https://www.youtube.com/watch?v=SAD4J0DzNdQ", label: "視頻課程", sort: 4, freePreview: false },
+      { id: 1,  title: "電商銷售團隊配置", vid: "FRUTBnoCcTwaM2M=", label: "策略課",   sort: 1, freePreview: true  },
+      { id: 2,  title: "內容與廣告配合",   vid: "FRUTBnoCcTwaM2M=", label: "視頻課程", sort: 2, freePreview: false },
+      { id: 3,  title: "數據複盤技巧",     vid: "FRUTBnoCcTwaM2M=", label: "視頻課程", sort: 3, freePreview: false },
+      { id: 4,  title: "轉化優化實戰",     vid: "FRUTBnoCcTwaM2M=", label: "視頻課程", sort: 4, freePreview: false },
     ],
   },
   {
@@ -51,9 +57,9 @@ export const ONLINE_COURSES: OnlineCourse[] = [
     publishDate: "2025-04-01", published: true, coverUrl: "",
     recommendedIds: [1, 3], categories: ["直播營銷"],
     sections: [
-      { id: 10, title: "數位行銷概覽",    videoUrl: "https://www.youtube.com/watch?v=demo", label: "視頻課程", sort: 1, freePreview: true },
-      { id: 11, title: "SEO 基礎",        videoUrl: "https://www.youtube.com/watch?v=demo", label: "視頻課程", sort: 2, freePreview: false },
-      { id: 12, title: "社群媒體行銷",    videoUrl: "https://www.youtube.com/watch?v=demo", label: "視頻課程", sort: 3, freePreview: false },
+      { id: 10, title: "數位行銷概覽",  vid: "IjE6XQ==", label: "視頻課程", sort: 1, freePreview: true  },
+      { id: 11, title: "SEO 基礎",      vid: "IjE6XQ==", label: "視頻課程", sort: 2, freePreview: false },
+      { id: 12, title: "社群媒體行銷",  vid: "IjE6XQ==", label: "視頻課程", sort: 3, freePreview: false },
     ],
   },
   {
@@ -65,8 +71,8 @@ export const ONLINE_COURSES: OnlineCourse[] = [
     publishDate: "2025-05-10", published: true, coverUrl: "",
     recommendedIds: [1, 2], categories: ["AI諮詢"],
     sections: [
-      { id: 20, title: "生成式 AI 概論",   videoUrl: "https://www.youtube.com/watch?v=demo2", label: "視頻課程", sort: 1, freePreview: true },
-      { id: 21, title: "導入策略規劃",     videoUrl: "https://www.youtube.com/watch?v=demo2", label: "視頻課程", sort: 2, freePreview: false },
+      { id: 20, title: "生成式 AI 概論", vid: "IjE6XQI=", label: "視頻課程", sort: 1, freePreview: true  },
+      { id: 21, title: "導入策略規劃",   vid: "IjE6XQI=", label: "視頻課程", sort: 2, freePreview: false },
     ],
   },
 ]

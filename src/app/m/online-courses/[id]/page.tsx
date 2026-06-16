@@ -3,16 +3,7 @@
 import { use, useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import { ChevronLeft, Star, Play, Pause, Lock, Maximize2, Minimize2, RotateCcw, RotateCw } from "lucide-react"
-import { ONLINE_COURSES, type Section } from "../../_lib/online-courses"
-
-function ytId(url: string): string | null {
-  try {
-    const u = new URL(url)
-    if (u.hostname.includes("youtube.com")) return u.searchParams.get("v")
-    if (u.hostname === "youtu.be") return u.pathname.slice(1).split("?")[0]
-  } catch {}
-  return url.match(/[?&]v=([^&\s]+)/)?.[1] ?? null
-}
+import { ONLINE_COURSES, decVid, type Section } from "../../_lib/online-courses"
 
 function useYTApiReady() {
   const [ready, setReady] = useState(false)
@@ -285,7 +276,7 @@ export default function OnlineCourseDetailPage({ params }: { params: Promise<{ i
   const recommended = ONLINE_COURSES.filter(c => course.recommendedIds.includes(c.id))
   const sortedSections = [...course.sections].sort((a, b) => a.sort - b.sort)
   const currentSection: Section | undefined = sortedSections[activeSection]
-  const currentVideoId = currentSection ? ytId(currentSection.videoUrl) : null
+  const currentVideoId = currentSection ? decVid(currentSection.vid) : null
 
   return (
     <div className="min-h-screen bg-[#fafaf9] pb-24">
