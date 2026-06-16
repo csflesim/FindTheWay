@@ -2,7 +2,7 @@
 
 import { use, useState, useEffect, useRef } from "react"
 import Link from "next/link"
-import { ChevronLeft, Star, Play, Pause, Lock, Maximize2, Minimize2 } from "lucide-react"
+import { ChevronLeft, Star, Play, Pause, Lock, Maximize2, Minimize2, RotateCcw, RotateCw } from "lucide-react"
 import { ONLINE_COURSES, type Section } from "../../_lib/online-courses"
 
 function ytId(url: string): string | null {
@@ -32,7 +32,7 @@ function fmt(s: number) {
   return `${m}:${Math.floor(s % 60).toString().padStart(2, "0")}`
 }
 
-function YouTubeEmbed({ videoId }: { videoId: string }) {
+function YouTubeEmbed({ videoId, coverUrl }: { videoId: string; coverUrl?: string }) {
   const apiReady = useYTApiReady()
   const playerRef = useRef<any>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -43,9 +43,11 @@ function YouTubeEmbed({ videoId }: { videoId: string }) {
   const [duration, setDuration] = useState(0)
   const [speed, setSpeed] = useState(1)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [quality, setQuality] = useState<string>("default")
+  const [availableQualities, setAvailableQualities] = useState<string[]>([])
+  const [showQuality, setShowQuality] = useState(false)
   const playerId = `yt-${videoId}`
 
-  // Track fullscreen state
   useEffect(() => {
     const onChange = () => setIsFullscreen(!!document.fullscreenElement)
     document.addEventListener("fullscreenchange", onChange)
@@ -70,7 +72,7 @@ function YouTubeEmbed({ videoId }: { videoId: string }) {
         playsinline: 1,
         modestbranding: 1,
         iv_load_policy: 3,
-        controls: 0,          // hide ALL YouTube native controls (logo included)
+        controls: 0,
         fs: 0,
         disablekb: 1,
         host: "https://www.youtube-nocookie.com",
@@ -82,6 +84,8 @@ function YouTubeEmbed({ videoId }: { videoId: string }) {
           iframe.removeAttribute("allowfullscreen")
           iframe.removeAttribute("allowFullScreen")
           setDuration(e.target.getDuration())
+          const q: string[] = e.target.getAvailableQualityLevels?.() ?? []
+          if (q.length) setAvailableQualities(q)
         },
         onStateChange: (e: any) => {
           const isPlaying = e.data === 1
@@ -94,7 +98,6 @@ function YouTubeEmbed({ videoId }: { videoId: string }) {
     return () => { clearInterval(tickRef.current); p.destroy?.() }
   }, [apiReady, videoId])
 
-  // Poll current time while playing
   useEffect(() => {
     if (playing) {
       tickRef.current = setInterval(() => {
@@ -110,6 +113,13 @@ function YouTubeEmbed({ videoId }: { videoId: string }) {
     playing ? playerRef.current?.pauseVideo() : playerRef.current?.playVideo()
   }
 
+  function skipSeconds(delta: number) {
+    if (!playerRef.current) return
+    const t = Math.max(0, (playerRef.current.getCurrentTime() ?? 0) + delta)
+    playerRef.current.seekTo(t, true)
+    setCurrent(t)
+  }
+
   function seek(e: React.ChangeEvent<HTMLInputElement>) {
     const t = (Number(e.target.value) / 100) * duration
     playerRef.current?.seekTo(t, true)
@@ -121,69 +131,135 @@ function YouTubeEmbed({ videoId }: { videoId: string }) {
     setSpeed(r)
   }
 
+  function changeQuality(q: string) {
+    playerRef.current?.setPlaybackQuality(q)
+    setQuality(q)
+    setShowQuality(false)
+  }
+
+  const QUALITY_LABEL: Record<string, string> = {
+    highres: "4K", hd1080: "1080p", hd720: "720p",
+    large: "480p", medium: "360p", small: "240p", default: "自動",
+  }
+
   const pct = duration > 0 ? (current / duration) * 100 : 0
 
   return (
     <div ref={containerRef} className="relative w-full bg-black select-none" style={{ paddingBottom: "56.25%" }}
          onContextMenu={e => e.preventDefault()}>
 
-      {/* YouTube mounts iframe here */}
+      {/* YouTube iframe */}
       <div id={playerId} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />
 
-      {/* Full overlay — blocks ALL YouTube UI (title, logo, end cards) */}
+      {/* Transparent click blocker — keeps all YouTube UI unclickable */}
       <div className="absolute inset-0 z-10" style={{ touchAction: "none" }}
            onContextMenu={e => e.preventDefault()} />
 
-      {/* Our custom player UI (z-20, above overlay) */}
-      <div className="absolute inset-0 z-20 flex flex-col">
+      {/* Custom UI layer */}
+      <div
+        className={`absolute inset-0 z-20 transition-colors ${started && !playing ? "bg-black" : ""}`}
+        onClick={togglePlay}
+      >
+        {/* Cover image — shown before first play */}
+        {!started && coverUrl && (
+          <div className="absolute inset-0">
+            <img src={coverUrl} alt="" className="w-full h-full object-cover" />
+          </div>
+        )}
 
-        {/* Center area — click to toggle play/pause */}
-        <div className="flex-1 flex items-center justify-center cursor-pointer" onClick={togglePlay}>
-          {!playing && (
-            <div className="w-14 h-14 rounded-full bg-black/50 backdrop-blur flex items-center justify-center">
-              <Play size={24} className="text-white fill-white ml-1" />
+        {/* Center controls — shown when paused */}
+        {!playing && (
+          <div className="absolute inset-0 flex items-center justify-center"
+               onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-10">
+              {started && (
+                <button onClick={() => skipSeconds(-10)}
+                  className="flex flex-col items-center gap-1 text-white/80 active:text-white transition-colors">
+                  <RotateCcw size={22} />
+                  <span className="text-[10px]">10</span>
+                </button>
+              )}
+
+              <button onClick={togglePlay}
+                className="w-16 h-16 rounded-full bg-white/20 backdrop-blur border border-white/20 flex items-center justify-center active:bg-white/30 transition-colors">
+                <Play size={26} className="text-white fill-white ml-1" />
+              </button>
+
+              {started && (
+                <button onClick={() => skipSeconds(10)}
+                  className="flex flex-col items-center gap-1 text-white/80 active:text-white transition-colors">
+                  <RotateCw size={22} />
+                  <span className="text-[10px]">10</span>
+                </button>
+              )}
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
-        {/* Control bar (shows after first play) */}
+        {/* Bottom control bar — shown after first play */}
         {started && (
-          <div className="bg-gradient-to-t from-black/80 to-transparent px-3 pt-8 pb-3">
-            {/* Seek bar */}
+          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-3 pt-8 pb-3"
+               onClick={e => e.stopPropagation()}>
             <input
               type="range" min="0" max="100" step="0.1"
               value={pct}
               onChange={seek}
-              onClick={e => e.stopPropagation()}
               className="w-full mb-2 cursor-pointer accent-white"
               style={{ height: 3 }}
             />
             <div className="flex items-center gap-3 text-white">
-              {/* Play / Pause */}
-              <button onClick={e => { e.stopPropagation(); togglePlay() }} className="shrink-0">
+              <button onClick={() => skipSeconds(-10)} className="shrink-0 text-white/80 active:text-white">
+                <RotateCcw size={15} />
+              </button>
+              <button onClick={togglePlay} className="shrink-0">
                 {playing
                   ? <Pause size={16} className="fill-white text-white" />
                   : <Play  size={16} className="fill-white text-white ml-px" />
                 }
               </button>
+              <button onClick={() => skipSeconds(10)} className="shrink-0 text-white/80 active:text-white">
+                <RotateCw size={15} />
+              </button>
 
-              {/* Time */}
               <span className="text-xs tabular-nums text-white/80">
                 {fmt(current)} / {fmt(duration)}
               </span>
 
-              {/* Speed + fullscreen — right side */}
-              <div className="ml-auto flex items-center gap-1">
+              <div className="ml-auto flex items-center gap-1 relative">
                 {[0.5, 1, 1.5, 2].map(r => (
                   <button key={r}
-                    onClick={e => { e.stopPropagation(); setRate(r) }}
+                    onClick={() => setRate(r)}
                     className={`px-1.5 py-0.5 rounded text-[11px] transition-colors ${
                       speed === r ? "bg-white text-black font-medium" : "text-white/60 hover:text-white"
                     }`}>
                     {r}x
                   </button>
                 ))}
-                <button onClick={e => { e.stopPropagation(); toggleFullscreen() }}
+
+                {/* Quality picker */}
+                {availableQualities.length > 0 && (
+                  <div className="relative ml-1">
+                    <button
+                      onClick={() => setShowQuality(v => !v)}
+                      className="px-1.5 py-0.5 rounded text-[11px] text-white/60 hover:text-white transition-colors">
+                      {QUALITY_LABEL[quality] ?? quality}
+                    </button>
+                    {showQuality && (
+                      <div className="absolute bottom-7 right-0 bg-black/90 border border-white/10 rounded-xl overflow-hidden min-w-[72px] z-10">
+                        {["default", ...availableQualities.filter(q => q !== "default")].map(q => (
+                          <button key={q} onClick={() => changeQuality(q)}
+                            className={`w-full text-left px-3 py-2 text-[11px] transition-colors ${
+                              quality === q ? "text-white font-medium" : "text-white/60 hover:text-white"
+                            }`}>
+                            {QUALITY_LABEL[q] ?? q}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <button onClick={toggleFullscreen}
                   className="ml-1 text-white/70 hover:text-white transition-colors">
                   {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
                 </button>
@@ -220,7 +296,7 @@ export default function OnlineCourseDetailPage({ params }: { params: Promise<{ i
         </Link>
 
         {currentVideoId
-          ? <YouTubeEmbed videoId={currentVideoId} />
+          ? <YouTubeEmbed videoId={currentVideoId} coverUrl={course.coverUrl || undefined} />
           : (
             <div className="aspect-video bg-gradient-to-br from-[#1a1a2e] to-[#16213e] flex items-center justify-center">
               <div className="w-14 h-14 bg-white/10 rounded-full flex items-center justify-center">
