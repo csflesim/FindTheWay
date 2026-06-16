@@ -1,0 +1,29 @@
+import { NextResponse } from "next/server"
+import crypto from "crypto"
+import { getLineConfig } from "@/lib/line-config"
+import { buildLineAuthUrl } from "@/lib/line"
+
+const BASE = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000"
+
+export function GET() {
+  const config = getLineConfig()
+  if (!config.channelId) {
+    return NextResponse.json(
+      { error: "尚未設定 LINE Channel ID，請至後台「參數管理」填入。" },
+      { status: 503 },
+    )
+  }
+
+  const state = crypto.randomBytes(16).toString("hex")
+  const redirectUri = `${BASE}/api/auth/line/callback`
+  const authUrl = buildLineAuthUrl(config.channelId, redirectUri, state)
+
+  const res = NextResponse.redirect(authUrl)
+  res.cookies.set("line_state", state, {
+    httpOnly: true,
+    sameSite: "lax",
+    maxAge: 300,
+    path: "/",
+  })
+  return res
+}
