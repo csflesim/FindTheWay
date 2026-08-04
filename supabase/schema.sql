@@ -2,8 +2,8 @@
 -- Find the Way 忙碌不迷路藝術工作坊 — 正式版 schema（v2 全面重建）
 --
 -- 使用方式：Supabase Dashboard → SQL Editor → New query → 貼上全部執行。
--- ⚠️ 此腳本會刪除舊版資料表（profiles / contact_submissions / artworks）
---    以及所有 v2 資料表後重建，執行前請確認不需保留舊資料。
+-- ⚠️ 此腳本會【清空所有資料】後重建（設定、課程、訂單全部歸零），
+--    只在初始化或刻意重置時使用；日常欄位調整請用單獨的 ALTER 語句。
 -- ============================================================================
 
 -- ────────────────────────────────────────────────────────────────────────────
@@ -87,7 +87,33 @@ as $$
 $$;
 
 -- ────────────────────────────────────────────────────────────────────────────
--- 2. students — 學員（會員本人與家屬），含審核流程
+-- 2. units / classrooms（先建，students 會引用 units） — 單位、教室
+-- ────────────────────────────────────────────────────────────────────────────
+create table public.units (
+  id         uuid primary key default gen_random_uuid(),
+  name       text not null,
+  type       text,                              -- 學校 / 社區機構 / 企業…
+  contact    text,
+  phone      text,
+  address    text,
+  status     text not null default '合作中' check (status in ('合作中', '已結束')),
+  sub_units  jsonb not null default '[]',       -- [{ "name": "...", "location": "..." }]
+  notes      text,
+  created_at timestamptz not null default now()
+);
+
+create table public.classrooms (
+  id         uuid primary key default gen_random_uuid(),
+  name       text not null,
+  capacity   int not null default 8,
+  equipment  jsonb not null default '[]',       -- ["畫架", "投影機", ...]
+  status     text not null default '使用中' check (status in ('使用中', '維修中', '停用')),
+  notes      text,
+  created_at timestamptz not null default now()
+);
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- 3. students — 學員（會員本人與家屬），含審核流程
 -- ────────────────────────────────────────────────────────────────────────────
 create table public.students (
   id          uuid primary key default gen_random_uuid(),
@@ -108,7 +134,7 @@ create table public.students (
 create index students_owner_idx on public.students(owner_id);
 
 -- ────────────────────────────────────────────────────────────────────────────
--- 3. teachers — 教師（可綁定登入帳號，也可先建檔未綁定）
+-- 4. teachers — 教師（可綁定登入帳號，也可先建檔未綁定）
 -- ────────────────────────────────────────────────────────────────────────────
 create table public.teachers (
   id           uuid primary key default gen_random_uuid(),
@@ -135,32 +161,6 @@ create table public.teacher_availability (
   reason     text
 );
 create index availability_teacher_idx on public.teacher_availability(teacher_id, date);
-
--- ────────────────────────────────────────────────────────────────────────────
--- 4. units / classrooms — 單位、教室
--- ────────────────────────────────────────────────────────────────────────────
-create table public.units (
-  id         uuid primary key default gen_random_uuid(),
-  name       text not null,
-  type       text,                              -- 學校 / 社區機構 / 企業…
-  contact    text,
-  phone      text,
-  address    text,
-  status     text not null default '合作中' check (status in ('合作中', '已結束')),
-  sub_units  jsonb not null default '[]',       -- [{ "name": "...", "location": "..." }]
-  notes      text,
-  created_at timestamptz not null default now()
-);
-
-create table public.classrooms (
-  id         uuid primary key default gen_random_uuid(),
-  name       text not null,
-  capacity   int not null default 8,
-  equipment  jsonb not null default '[]',       -- ["畫架", "投影機", ...]
-  status     text not null default '使用中' check (status in ('使用中', '維修中', '停用')),
-  notes      text,
-  created_at timestamptz not null default now()
-);
 
 -- ────────────────────────────────────────────────────────────────────────────
 -- 5. courses / course_teachers / course_attendance — 課程、授課教師、出席
