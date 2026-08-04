@@ -221,7 +221,7 @@ const statusStyle: Record<string, string> = {
   "離職":  "bg-[#f5f5f5] text-[#999]",
 }
 
-const EMPTY_FORM = { name: "", specialty: "", email: "", phone: "", bio: "", status: "在職" as Teacher["status"], photo: "", lineUserId: "" }
+const EMPTY_FORM = { name: "", specialty: "", email: "", phone: "", bio: "", status: "在職" as Teacher["status"], photo: "", lineUserId: "", password: "" }
 
 export default function TeachersPage() {
   const supabase = useMemo(() => createClient(), [])
@@ -284,8 +284,22 @@ export default function TeachersPage() {
 
   function openEdit(t: Teacher) {
     setEditing(t)
-    setForm({ name: t.name, specialty: t.specialty, email: t.email ?? "", phone: t.phone ?? "", bio: t.bio ?? "", status: t.status, photo: t.photo ?? "", lineUserId: t.lineUserId ?? "" })
+    setForm({ name: t.name, specialty: t.specialty, email: t.email ?? "", phone: t.phone ?? "", bio: t.bio ?? "", status: t.status, photo: t.photo ?? "", lineUserId: t.lineUserId ?? "", password: "" })
     setDrawer("edit")
+  }
+
+  // 有填密碼時建立/更新教師登入帳號並綁定
+  async function syncTeacherAccount(teacherId: string) {
+    if (!form.password.trim()) return
+    if (!form.email.trim()) { alert("要設定密碼需先填 Email"); return }
+    const res = await fetch("/api/admin/teacher-account", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ teacherId, email: form.email.trim(), password: form.password }),
+    })
+    const d = await res.json()
+    if (!res.ok || !d.ok) { alert(`登入帳號設定失敗：${d.error ?? res.status}`); return }
+    alert(d.created ? "已建立教師登入帳號" : "已更新教師登入密碼")
   }
 
   function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -320,6 +334,7 @@ export default function TeachersPage() {
       const { data, error } = await supabase.from("teachers").insert(row).select().single()
       if (error) throw new Error(error.message)
       const r = data as TeacherRow
+      await syncTeacherAccount(r.id)
       setTeachers(prev => [...prev, {
         id: r.id, name: r.name, specialty: r.specialty ?? "",
         courses: 0, monthlyClasses: 0, attendanceRate: 100,
@@ -342,6 +357,7 @@ export default function TeachersPage() {
       const row = await formToRow()
       const { error } = await supabase.from("teachers").update(row).eq("id", editing.id)
       if (error) throw new Error(error.message)
+      await syncTeacherAccount(editing.id)
       setTeachers(prev => prev.map(t => t.id === editing.id
         ? { ...t, name: row.name, specialty: row.specialty ?? "", email: row.email ?? "", phone: row.phone ?? "", bio: row.bio ?? "", status: row.status, photo: row.photo_url ?? undefined, lineUserId: row.line_user_id ?? undefined }
         : t
@@ -510,6 +526,15 @@ export default function TeachersPage() {
               <Field label="電話">
                 <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
                   placeholder="09xx-xxx-xxx" className={inputCls} />
+              </Field>
+
+              <Field label="登入密碼">
+                <input type="password" value={form.password}
+                  onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+                  placeholder="••••••••（至少 8 碼）" className={inputCls} />
+                <p className="text-[11px] text-[#aaa] mt-1.5">
+                  填寫後儲存，會以上方 Email 建立（或重設）教師登入帳號；留空則不變更
+                </p>
               </Field>
 
               <Field label="簡介">
