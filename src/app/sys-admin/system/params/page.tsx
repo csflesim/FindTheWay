@@ -40,7 +40,7 @@ const EMAIL_PARAMS = [
   { key: "smtp_port", label: "連接埠",      desc: "TLS 通常 587，SSL 通常 465",                   secret: false, placeholder: "587" },
   { key: "smtp_user", label: "帳號",        desc: "SMTP 認證用帳號（通常為 Email 地址）",          secret: false, placeholder: "" },
   { key: "smtp_pass", label: "密碼",        desc: "SMTP 認證密碼或應用程式專屬密碼",               secret: true,  placeholder: "" },
-  { key: "smtp_from", label: "寄件人",      desc: "顯示於收件者的寄件人名稱與地址",                secret: false, placeholder: "忙碌不迷路 <noreply@findtheway.com>" },
+  { key: "smtp_from", label: "寄件人顯示名稱", desc: "收件者看到的寄件人名稱（自動搭配上方帳號地址寄出）", secret: false, placeholder: "忙碌不迷路藝術工作室" },
 ]
 
 type ParamDef = { key: string; label: string; desc: string; secret: boolean; placeholder?: string }
