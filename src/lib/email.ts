@@ -24,24 +24,14 @@ export type SendEmailResult =
   | { ok: true; id: string; provider: "resend" | "smtp" }
   | { ok: false; error: string; provider: "resend" | "smtp" }
 
-function getEmailProvider(): "resend" | "smtp" {
-  if (process.env.EMAIL_PROVIDER === "smtp") return "smtp"
-  if (process.env.RESEND_API_KEY) return "resend"
-  // 後台「Email 設定」儲存的 SMTP（env SMTP_HOST 優先於設定檔，由 smtp-config 處理）
-  if (loadSmtpConfig().host) return "smtp"
-  return "resend"
+type SmtpRuntimeConfig = {
+  host: string; port: number; secure: boolean
+  user: string; pass: string; fromEmail: string
 }
 
-function getResendConfig() {
-  return {
-    apiKey: process.env.RESEND_API_KEY ?? "",
-    fromEmail: process.env.RESEND_FROM_EMAIL ?? "noreply@findtheway.app",
-  }
-}
-
-function getSmtpConfig() {
+async function resolveSmtpConfig(): Promise<SmtpRuntimeConfig> {
   // 讀取後台儲存的 SMTP 設定（含密碼解密）；env vars 優先由 smtp-config 模組處理
-  const cfg = loadSmtpConfig()
+  const cfg = await loadSmtpConfig()
   const port = Number(cfg.port || "587")
   return {
     host: cfg.host,
@@ -53,13 +43,28 @@ function getSmtpConfig() {
   }
 }
 
+function pickProvider(smtp: SmtpRuntimeConfig): "resend" | "smtp" {
+  if (process.env.EMAIL_PROVIDER === "smtp") return "smtp"
+  if (process.env.RESEND_API_KEY) return "resend"
+  if (smtp.host) return "smtp"
+  return "resend"
+}
+
+function getResendConfig() {
+  return {
+    apiKey: process.env.RESEND_API_KEY ?? "",
+    fromEmail: process.env.RESEND_FROM_EMAIL ?? "noreply@findtheway.app",
+  }
+}
+
 export async function sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
-  const provider = getEmailProvider()
+  const smtpCfg = await resolveSmtpConfig()
+  const provider = pickProvider(smtpCfg)
   if (!params.html && !params.text) {
     return { ok: false, error: "html 與 text 至少需提供一項", provider }
   }
   try {
-    return provider === "smtp" ? await sendViaSmtp(params) : await sendViaResend(params)
+    return provider === "smtp" ? await sendViaSmtp(params, smtpCfg) : await sendViaResend(params)
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e), provider }
   }
@@ -84,8 +89,7 @@ async function sendViaResend(params: SendEmailParams): Promise<SendEmailResult> 
   return { ok: true, id: data.id, provider: "resend" }
 }
 
-async function sendViaSmtp(params: SendEmailParams): Promise<SendEmailResult> {
-  const cfg = getSmtpConfig()
+async function sendViaSmtp(params: SendEmailParams, cfg: SmtpRuntimeConfig): Promise<SendEmailResult> {
   const transporter = nodemailer.createTransport({
     host: cfg.host,
     port: cfg.port,

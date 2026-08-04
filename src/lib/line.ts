@@ -75,7 +75,7 @@ export async function pushMessage(
   to: string,
   messages: LineMessage | LineMessage[],
 ): Promise<PushResult> {
-  const cfg = getLineMsgConfig()
+  const cfg = await getLineMsgConfig()
   try {
     if (!to) return { ok: false, status: 0, error: "缺少接收者 userId" }
     const list = Array.isArray(messages) ? messages : [messages]
@@ -110,7 +110,7 @@ export function pushFlex(
 }
 
 export async function broadcastMessage(messages: LineMessage | LineMessage[]): Promise<PushResult> {
-  const cfg = getLineMsgConfig()
+  const cfg = await getLineMsgConfig()
   try {
     const list = Array.isArray(messages) ? messages : [messages]
     const res = await fetch("https://api.line.me/v2/bot/message/broadcast", {
@@ -133,11 +133,11 @@ export async function broadcastMessage(messages: LineMessage | LineMessage[]): P
 
 // ── Webhook HMAC verification ─────────────────────────────────
 
-export function verifyWebhookSignature(
+export async function verifyWebhookSignature(
   rawBody: string | Buffer,
   signature: string | null | undefined,
-): boolean {
-  const cfg = getLineMsgConfig()
+): Promise<boolean> {
+  const cfg = await getLineMsgConfig()
   if (!signature) return false
   const expected = crypto
     .createHmac("sha256", cfg.channelSecret)

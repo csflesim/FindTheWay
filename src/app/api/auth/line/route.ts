@@ -5,8 +5,8 @@ import { buildLineAuthUrl } from "@/lib/line"
 
 const BASE = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000"
 
-export function GET(req: Request) {
-  const config = getLineLoginConfig()
+export async function GET(req: Request) {
+  const config = await getLineLoginConfig()
   if (!config.channelId) {
     return NextResponse.json(
       { error: "尚未設定 LINE Channel ID，請至後台「參數管理」填入。" },

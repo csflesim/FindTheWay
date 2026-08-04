@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
     broadcast?: boolean
   }
 
-  const config = getLineMsgConfig()
+  const config = await getLineMsgConfig()
   if (!config.accessToken) {
     return NextResponse.json(
       { error: "尚未設定 LINE Channel Access Token，請至後台「參數管理」填入。" },

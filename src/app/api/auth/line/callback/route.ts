@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL("/m/login?error=invalid_state", BASE))
   }
 
-  const config = getLineLoginConfig()
+  const config = await getLineLoginConfig()
   const redirectUri = `${BASE}/api/auth/line/callback`
 
   try {

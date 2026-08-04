@@ -1,6 +1,8 @@
-import fs from "fs"
-import path from "path"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { encryptSecret, decryptSecret } from "@/lib/secret-crypto"
+
+// LINE 設定存於 Supabase settings 表（Vercel serverless 檔案系統唯讀，不能寫檔）。
+// 敏感欄位以 AES-256-GCM 加密後入庫；env vars 優先於 DB 設定。
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -16,19 +18,29 @@ export type LineMsgConfig = {
   accessToken: string
 }
 
-// ── Paths ─────────────────────────────────────────────────────
+// ── settings 表存取 ───────────────────────────────────────────
 
-const LOGIN_PATH = path.join(process.cwd(), "data", "line-login-config.json")
-const MSG_PATH   = path.join(process.cwd(), "data", "line-msg-config.json")
+async function readSetting(key: string): Promise<Record<string, string>> {
+  try {
+    const admin = createAdminClient()
+    const { data } = await admin.from("settings").select("value").eq("key", key).maybeSingle()
+    return (data?.value as Record<string, string>) ?? {}
+  } catch {
+    return {}
+  }
+}
 
-function ensureDir(filePath: string) {
-  const dir = path.dirname(filePath)
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+async function writeSetting(key: string, value: Record<string, string>): Promise<void> {
+  const admin = createAdminClient()
+  const { error } = await admin
+    .from("settings")
+    .upsert({ key, value, updated_at: new Date().toISOString() })
+  if (error) throw new Error(`儲存設定失敗（${key}）：${error.message}`)
 }
 
 // ── LINE Login Channel ────────────────────────────────────────
 
-export function getLineLoginConfig(): LineLoginConfig {
+export async function getLineLoginConfig(): Promise<LineLoginConfig> {
   if (process.env.LINE_CHANNEL_ID) {
     return {
       channelId: process.env.LINE_CHANNEL_ID,
@@ -36,23 +48,25 @@ export function getLineLoginConfig(): LineLoginConfig {
       liffId: process.env.LINE_LIFF_ID ?? "",
     }
   }
-  try {
-    const raw = JSON.parse(fs.readFileSync(LOGIN_PATH, "utf-8")) as LineLoginConfig
-    return { ...raw, channelSecret: decryptSecret(raw.channelSecret) }
-  } catch {
-    return { channelId: "", channelSecret: "", liffId: "" }
+  const v = await readSetting("line_login")
+  return {
+    channelId: v.channelId ?? "",
+    channelSecret: decryptSecret(v.channelSecret ?? ""),
+    liffId: v.liffId ?? "",
   }
 }
 
-export function saveLineLoginConfig(config: LineLoginConfig): void {
-  ensureDir(LOGIN_PATH)
-  const stored = { ...config, channelSecret: encryptSecret(config.channelSecret) }
-  fs.writeFileSync(LOGIN_PATH, JSON.stringify(stored, null, 2), "utf-8")
+export async function saveLineLoginConfig(config: LineLoginConfig): Promise<void> {
+  await writeSetting("line_login", {
+    channelId: config.channelId,
+    channelSecret: encryptSecret(config.channelSecret),
+    liffId: config.liffId,
+  })
 }
 
 // ── LINE Messaging API Channel ────────────────────────────────
 
-export function getLineMsgConfig(): LineMsgConfig {
+export async function getLineMsgConfig(): Promise<LineMsgConfig> {
   if (process.env.LINE_MSG_CHANNEL_ID) {
     return {
       channelId: process.env.LINE_MSG_CHANNEL_ID,
@@ -60,42 +74,18 @@ export function getLineMsgConfig(): LineMsgConfig {
       accessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN ?? "",
     }
   }
-  try {
-    const raw = JSON.parse(fs.readFileSync(MSG_PATH, "utf-8")) as LineMsgConfig
-    return {
-      ...raw,
-      channelSecret: decryptSecret(raw.channelSecret),
-      accessToken: decryptSecret(raw.accessToken),
-    }
-  } catch {
-    return { channelId: "", channelSecret: "", accessToken: "" }
+  const v = await readSetting("line_msg")
+  return {
+    channelId: v.channelId ?? "",
+    channelSecret: decryptSecret(v.channelSecret ?? ""),
+    accessToken: decryptSecret(v.accessToken ?? ""),
   }
 }
 
-export function saveLineMsgConfig(config: LineMsgConfig): void {
-  ensureDir(MSG_PATH)
-  const stored = {
-    ...config,
+export async function saveLineMsgConfig(config: LineMsgConfig): Promise<void> {
+  await writeSetting("line_msg", {
+    channelId: config.channelId,
     channelSecret: encryptSecret(config.channelSecret),
     accessToken: encryptSecret(config.accessToken),
-  }
-  fs.writeFileSync(MSG_PATH, JSON.stringify(stored, null, 2), "utf-8")
-}
-
-// ── Backward compat (舊 getLineConfig 仍可呼叫) ───────────────
-
-/** @deprecated 請改用 getLineLoginConfig() 或 getLineMsgConfig() */
-export type LineConfig = LineLoginConfig & { accessToken: string }
-
-/** @deprecated */
-export function getLineConfig(): LineConfig {
-  const login = getLineLoginConfig()
-  const msg   = getLineMsgConfig()
-  return { ...login, accessToken: msg.accessToken }
-}
-
-/** @deprecated */
-export function saveLineConfig(config: LineConfig): void {
-  saveLineLoginConfig({ channelId: config.channelId, channelSecret: config.channelSecret, liffId: config.liffId })
-  saveLineMsgConfig({ channelId: config.channelId, channelSecret: config.channelSecret, accessToken: config.accessToken })
+  })
 }

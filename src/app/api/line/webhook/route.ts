@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
   const body = await req.text()
   const signature = req.headers.get("x-line-signature") ?? ""
 
-  const { channelSecret } = getLineMsgConfig()
+  const { channelSecret } = await getLineMsgConfig()
   if (channelSecret) {
     const expected = crypto
       .createHmac("sha256", channelSecret)
