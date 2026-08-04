@@ -9,7 +9,7 @@ export async function GET() {
     const { data, error } = await admin
       .from("settings")
       .select("key, value")
-      .in("key", ["pay_methods", "features"])
+      .in("key", ["pay_methods", "features", "business_hours"])
     if (error) throw new Error(error.message)
 
     const map = Object.fromEntries((data ?? []).map(r => [r.key, r.value]))
@@ -20,12 +20,18 @@ export async function GET() {
       features: {
         onlineCourse: map.features?.onlineCourse !== false,
       },
+      businessHours: {
+        open: map.business_hours?.open ?? "09:00",
+        close: map.business_hours?.close ?? "22:00",
+        slotMinutes: map.business_hours?.slotMinutes ?? 60,
+      },
     })
   } catch (err) {
     console.error("public-params error:", err)
     return NextResponse.json({
       payMethods: ["銀行轉帳", "現金"],
       features: { onlineCourse: true },
+      businessHours: { open: "09:00", close: "22:00", slotMinutes: 60 },
     })
   }
 }

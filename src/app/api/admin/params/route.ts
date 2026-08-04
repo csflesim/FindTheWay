@@ -17,12 +17,16 @@ export async function GET() {
     getLineLoginConfig(),
     getLineMsgConfig(),
     getSmtpConfig(),
-    admin.from("settings").select("key, value").in("key", ["pay_methods", "features"]),
+    admin.from("settings").select("key, value").in("key", ["pay_methods", "features", "business_hours"]),
   ])
   const settingsMap = Object.fromEntries((settingsRes.data ?? []).map(r => [r.key, r.value]))
+  const bh = settingsMap.business_hours ?? {}
   return NextResponse.json({
     pay_methods: Array.isArray(settingsMap.pay_methods) ? settingsMap.pay_methods : ["銀行轉帳", "現金"],
     features: settingsMap.features ?? { onlineCourse: true },
+    open_hour: bh.open ?? "09:00",
+    close_hour: bh.close ?? "22:00",
+    slot_minutes: String(bh.slotMinutes ?? 60),
     line_channel_id:         login.channelId,
     line_channel_secret:     login.channelSecret,
     line_liff_id:            login.liffId,
@@ -61,6 +65,20 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    // 上課時間（教師日曆可排課時段）
+    if (body.open_hour || body.close_hour || body.slot_minutes) {
+      const admin = createAdminClient()
+      await admin.from("settings").upsert({
+        key: "business_hours",
+        value: {
+          open: body.open_hour || "09:00",
+          close: body.close_hour || "22:00",
+          slotMinutes: parseInt(body.slot_minutes) || 60,
+        },
+        updated_at: new Date().toISOString(),
+      })
+    }
+
     await Promise.all([
       saveLineLoginConfig({
         channelId:     body.line_channel_id     ?? "",

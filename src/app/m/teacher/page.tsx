@@ -11,8 +11,9 @@ import { fetchTeacherCourses, occurrencesInRange, todayStr, attDate, type Occurr
 type ViewMode = 'list' | 'day' | 'week' | 'month'
 
 const DAYS_SHORT = ["日", "一", "二", "三", "四", "五", "六"]
-const START_HOUR = 9
-const END_HOUR = 22
+// 可排課時段：由後台「參數管理 → 上課時間」設定，載入時覆寫
+let START_HOUR = 9
+let END_HOUR = 22
 const HOUR_H = 52
 const TODAY = todayStr()
 
@@ -477,6 +478,15 @@ export default function TeacherCoursesPage() {
   useEffect(() => {
     if (!teacher) return
     ;(async () => {
+      // 可排課時段設定
+      try {
+        const p = await fetch("/api/public-params").then(r => r.json())
+        const open = parseInt(p?.businessHours?.open ?? "9")
+        const close = parseInt(p?.businessHours?.close ?? "22")
+        if (!isNaN(open)) START_HOUR = open
+        if (!isNaN(close) && close > open) END_HOUR = close
+      } catch {}
+
       const courses = await fetchTeacherCourses(supabase, teacher.id)
       const start = new Date(); start.setDate(start.getDate() - 60)
       const end = new Date(); end.setDate(end.getDate() + 90)

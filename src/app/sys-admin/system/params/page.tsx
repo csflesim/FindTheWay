@@ -7,23 +7,21 @@ const ALL_PAY_METHODS = ["銀行轉帳", "現金", "Line Pay", "信用卡"]
 const DEFAULT_PAY_METHODS = ["銀行轉帳", "現金"]
 const DEFAULT_FEATURES = { onlineCourse: true }
 
-const STATIC_GROUPS = [
-  {
-    group: "上課時間",
-    params: [
-      { key: "open_hour",    label: "開放時間（起）",   value: "09:00", desc: "工作室每日最早開課時間" },
-      { key: "close_hour",   label: "開放時間（迄）",   value: "22:00", desc: "工作室每日最晚下課時間" },
-      { key: "slot_minutes", label: "時段間隔（分鐘）", value: "60",    desc: "行事曆格線單位"         },
-    ],
-  },
-  {
-    group: "通知設定",
-    params: [
-      { key: "remind_hours", label: "上課提醒（小時前）", value: "24",                   desc: "自動推播上課通知的提前時間" },
-      { key: "notify_email", label: "系統通知 Email",     value: "admin@findtheway.com", desc: "收款、退款等事件通知"       },
-    ],
-  },
+// 上課時間：教師日曆的可排課時段（儲存後生效，教師端日/週檢視依此顯示格線）
+const HOURS_PARAMS = [
+  { key: "open_hour",    label: "開放時間（起）",   desc: "教師日曆每日最早可排課時間", secret: false, placeholder: "09:00" },
+  { key: "close_hour",   label: "開放時間（迄）",   desc: "教師日曆每日最晚下課時間",   secret: false, placeholder: "22:00" },
+  { key: "slot_minutes", label: "時段間隔（分鐘）", desc: "行事曆格線單位",             secret: false, placeholder: "60" },
 ]
+
+// 通知設定：待與排程（Cron）功能整併後啟用
+const NOTIFY_GROUP = {
+  group: "通知設定",
+  params: [
+    { key: "remind_hours", label: "上課提醒（小時前）", value: "24",                   desc: "自動推播上課通知的提前時間" },
+    { key: "notify_email", label: "系統通知 Email",     value: "admin@findtheway.com", desc: "收款、退款等事件通知"       },
+  ],
+}
 
 const LINE_LOGIN_PARAMS = [
   { key: "line_channel_id",     label: "Channel ID",     desc: "LINE Developers Console → Login Channel", secret: false },
@@ -164,7 +162,7 @@ export default function ParamsPage() {
   async function handleSave() {
     setSaving(true)
     setSaved(false)
-    const allKeys = [...LINE_LOGIN_PARAMS, ...LINE_MSG_PARAMS, ...EMAIL_PARAMS]
+    const allKeys = [...HOURS_PARAMS, ...LINE_LOGIN_PARAMS, ...LINE_MSG_PARAMS, ...EMAIL_PARAMS]
     const body: Record<string, string> = {}
     for (const p of allKeys) {
       body[p.key] = allRefs.current[p.key]?.value ?? ""
@@ -208,28 +206,41 @@ export default function ParamsPage() {
 
       <div className="flex flex-col gap-5">
 
-        {/* Static groups (上課時間 / 通知設定) */}
-        {STATIC_GROUPS.map(({ group, params }) => (
-          <div key={group} className="bg-white rounded-xl border border-[#f0f0f0] overflow-hidden">
-            <div className="px-5 py-3 border-b border-[#f5f5f5]">
-              <p className="text-xs font-medium text-[#555]">{group}</p>
-            </div>
-            <div className="divide-y divide-[#f5f5f5]">
-              {params.map(({ key, label, value, desc }) => (
-                <div key={key} className="flex items-center gap-4 px-5 py-4">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium">{label}</p>
-                    <p className="text-xs text-[#aaa] mt-0.5">{desc}</p>
-                  </div>
-                  <input
-                    defaultValue={value}
-                    className="w-52 shrink-0 text-sm text-right bg-[#f9f9f9] border border-transparent rounded-lg px-3 py-2 outline-none focus:bg-white focus:border-black transition-colors"
-                  />
-                </div>
-              ))}
-            </div>
+        {/* 上課時間（教師日曆可排課時段，儲存變更後生效） */}
+        <div className="bg-white rounded-xl border border-[#f0f0f0] overflow-hidden">
+          <div className="px-5 py-3 border-b border-[#f5f5f5] flex items-center justify-between">
+            <p className="text-xs font-medium text-[#555]">上課時間</p>
+            <span className="text-[10px] text-[#06C755] bg-[#e8faf0] px-2 py-0.5 rounded-full">儲存後生效</span>
           </div>
-        ))}
+          <div className="divide-y divide-[#f5f5f5]">
+            {HOURS_PARAMS.map(p => (
+              <ParamRow key={p.key} def={p} refsMap={allRefs} />
+            ))}
+          </div>
+        </div>
+
+        {/* 通知設定（待與排程功能整併） */}
+        <div className="bg-white rounded-xl border border-[#f0f0f0] overflow-hidden opacity-60">
+          <div className="px-5 py-3 border-b border-[#f5f5f5] flex items-center justify-between">
+            <p className="text-xs font-medium text-[#555]">{NOTIFY_GROUP.group}</p>
+            <span className="text-[10px] text-[#aaa] bg-[#f5f5f5] px-2 py-0.5 rounded-full">待與排程功能整併</span>
+          </div>
+          <div className="divide-y divide-[#f5f5f5]">
+            {NOTIFY_GROUP.params.map(({ key, label, value, desc }) => (
+              <div key={key} className="flex items-center gap-4 px-5 py-4">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">{label}</p>
+                  <p className="text-xs text-[#aaa] mt-0.5">{desc}</p>
+                </div>
+                <input
+                  defaultValue={value}
+                  disabled
+                  className="w-52 shrink-0 text-sm text-right bg-[#f9f9f9] border border-transparent rounded-lg px-3 py-2 outline-none text-[#aaa]"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
 
         {/* 付款設定 */}
         <div className="bg-white rounded-xl border border-[#f0f0f0] overflow-hidden">
