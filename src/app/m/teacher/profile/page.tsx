@@ -1,13 +1,14 @@
 'use client'
 
 import { useEffect, useMemo, useState } from "react"
-import { ChevronRight, Eye, EyeOff, Upload } from "lucide-react"
+import { ChevronRight, Eye, EyeOff } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { useTeacher } from "../_lib/useTeacher"
 import { fetchTeacherCourses, occurrencesInRange } from "../_lib/teacherData"
 
 type HistoryEntry = { id: string; course: string; date: string; present: number; total: number }
 
+const NOTIFY_KEY = "ftw.teacher-notify.v1"
 const inputCls = "w-full px-4 py-3 text-sm bg-white border border-[#f0f0f0] rounded-xl outline-none focus:border-black transition-colors"
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -21,18 +22,87 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
+function Row({ label, value, onClick }: { label: string; value?: string; onClick?: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full flex items-center justify-between px-4 py-3.5 text-left"
+    >
+      <span className="text-sm">{label}</span>
+      <div className="flex items-center gap-2 min-w-0">
+        {value && <span className="text-sm text-[#aaa] truncate max-w-[180px]">{value}</span>}
+        <ChevronRight size={16} className="text-[#ccc] shrink-0" />
+      </div>
+    </button>
+  )
+}
+
+function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: () => void }) {
+  return (
+    <div className="flex items-center justify-between px-4 py-3.5">
+      <span className="text-sm">{label}</span>
+      <button
+        onClick={onChange}
+        className={`w-10 h-6 rounded-full transition-colors relative ${value ? "bg-black" : "bg-[#ddd]"}`}
+      >
+        <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${value ? "left-[18px]" : "left-0.5"}`} />
+      </button>
+    </div>
+  )
+}
+
+// 逐列展開編輯（與會員帳號設定同樣式）
+function EditableRow({ label, value, placeholder, multiline, busy, onSave }: {
+  label: string
+  value: string
+  placeholder?: string
+  multiline?: boolean
+  busy: boolean
+  onSave: (v: string) => Promise<boolean>
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value)
+
+  useEffect(() => { setDraft(value) }, [value])
+
+  if (!editing) {
+    return <Row label={label} value={value || "—"} onClick={() => setEditing(true)} />
+  }
+  return (
+    <div className="px-4 py-3.5 flex flex-col gap-2">
+      <label className="text-xs text-[#aaa]">{label}</label>
+      {multiline ? (
+        <textarea value={draft} onChange={e => setDraft(e.target.value)} rows={3}
+          placeholder={placeholder} className={`${inputCls} resize-none`} autoFocus />
+      ) : (
+        <input value={draft} onChange={e => setDraft(e.target.value)}
+          placeholder={placeholder} className={inputCls} autoFocus />
+      )}
+      <div className="flex gap-2 mt-1">
+        <button onClick={() => { setEditing(false); setDraft(value) }}
+          className="flex-1 py-2 text-sm border border-[#f0f0f0] rounded-xl">
+          取消
+        </button>
+        <button
+          onClick={async () => { const ok = await onSave(draft); if (ok) setEditing(false) }}
+          disabled={busy}
+          className="flex-1 py-2 text-sm bg-black text-white rounded-xl disabled:opacity-40"
+        >
+          {busy ? "儲存中…" : "儲存"}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function TeacherProfilePage() {
   const supabase = useMemo(() => createClient(), [])
   const { teacher, loading } = useTeacher()
   const [stats, setStats] = useState({ monthly: 0, courseCount: 0, rate: 100 })
   const [history, setHistory] = useState<HistoryEntry[]>([])
 
-  // 顯示用（編輯後即時更新）
-  const [display, setDisplay] = useState({ name: "", specialty: "", photoUrl: null as string | null })
-
-  // 個人資料編輯
-  const [editingInfo, setEditingInfo] = useState(false)
-  const [form, setForm] = useState({ name: "", specialty: "", phone: "", bio: "", photo: "" })
+  // 個人資料（編輯後即時更新）
+  const [info, setInfo] = useState({ name: "", specialty: "", phone: "", bio: "", photoUrl: null as string | null })
   const [busy, setBusy] = useState(false)
 
   // 改密碼
@@ -42,10 +112,29 @@ export default function TeacherProfilePage() {
   const [showOld, setShowOld] = useState(false)
   const [showNew, setShowNew] = useState(false)
 
+  // 通知設定
+  const [notifyCourse, setNotifyCourse] = useState(true)
+  const [notifySystem, setNotifySystem] = useState(true)
+  const [logoutConfirm, setLogoutConfirm] = useState(false)
+
+  useEffect(() => {
+    try {
+      const s = localStorage.getItem(NOTIFY_KEY)
+      if (s) {
+        const p = JSON.parse(s)
+        if (typeof p.course === "boolean") setNotifyCourse(p.course)
+        if (typeof p.system === "boolean") setNotifySystem(p.system)
+      }
+    } catch {}
+  }, [])
+
+  function saveNotify(course: boolean, system: boolean) {
+    try { localStorage.setItem(NOTIFY_KEY, JSON.stringify({ course, system })) } catch {}
+  }
+
   useEffect(() => {
     if (!teacher) return
-    setDisplay({ name: teacher.name, specialty: teacher.specialty, photoUrl: teacher.photoUrl })
-    setForm({ name: teacher.name, specialty: teacher.specialty, phone: teacher.phone, bio: teacher.bio, photo: teacher.photoUrl ?? "" })
+    setInfo({ name: teacher.name, specialty: teacher.specialty, phone: teacher.phone, bio: teacher.bio, photoUrl: teacher.photoUrl })
     ;(async () => {
       const courses = await fetchTeacherCourses(supabase, teacher.id)
       const now = new Date()
@@ -84,34 +173,34 @@ export default function TeacherProfilePage() {
     })()
   }, [teacher, supabase])
 
-  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => setForm(f => ({ ...f, photo: reader.result as string }))
-    reader.readAsDataURL(file)
-  }
-
-  async function saveInfo() {
-    if (busy || !form.name.trim()) return
+  async function saveField(patch: Partial<typeof info> & { photoDataUrl?: string }): Promise<boolean> {
+    if (busy) return false
     setBusy(true)
+    const next = { ...info, ...patch }
     const res = await fetch("/api/teacher/profile", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: form.name.trim(),
-        specialty: form.specialty.trim(),
-        phone: form.phone.trim(),
-        bio: form.bio.trim(),
-        photoDataUrl: form.photo.startsWith("data:") ? form.photo : undefined,
+        name: next.name.trim(),
+        specialty: next.specialty.trim(),
+        phone: next.phone.trim(),
+        bio: next.bio.trim(),
+        photoDataUrl: patch.photoDataUrl,
       }),
     })
     const d = await res.json()
     setBusy(false)
-    if (!res.ok || !d.ok) { alert(`儲存失敗：${d.error ?? res.status}`); return }
-    setDisplay({ name: form.name.trim(), specialty: form.specialty.trim(), photoUrl: d.photoUrl ?? display.photoUrl })
-    if (d.photoUrl) setForm(f => ({ ...f, photo: d.photoUrl }))
-    setEditingInfo(false)
+    if (!res.ok || !d.ok) { alert(`儲存失敗：${d.error ?? res.status}`); return false }
+    setInfo({ ...next, photoUrl: d.photoUrl ?? next.photoUrl })
+    return true
+  }
+
+  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => saveField({ photoDataUrl: reader.result as string })
+    reader.readAsDataURL(file)
   }
 
   async function savePassword() {
@@ -137,7 +226,7 @@ export default function TeacherProfilePage() {
   if (!teacher) return null
 
   return (
-    <div>
+    <div className="min-h-screen bg-[#fafaf9]">
       <header className="sticky top-0 bg-white/90 backdrop-blur-sm border-b border-[#ebebeb] px-5 py-4 z-10">
         <p className="text-[10px] text-[#aaa] uppercase tracking-widest">Teacher</p>
         <h1 className="text-sm font-medium">我的</h1>
@@ -146,13 +235,17 @@ export default function TeacherProfilePage() {
       {/* Profile card */}
       <div className="mx-4 mt-4 bg-black text-white rounded-2xl p-5">
         <div className="flex items-center gap-3">
-          {display.photoUrl
-            ? <img src={display.photoUrl} alt="頭貼" className="w-12 h-12 rounded-full shrink-0 object-cover" />
-            : <div className="w-12 h-12 rounded-full shrink-0 bg-white/20 flex items-center justify-center text-base">{display.name.slice(0, 1)}</div>
-          }
+          <label className="cursor-pointer shrink-0 relative group">
+            <input type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
+            {info.photoUrl
+              ? <img src={info.photoUrl} alt="頭貼" className="w-12 h-12 rounded-full object-cover" />
+              : <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-base">{info.name.slice(0, 1)}</div>
+            }
+            <span className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-[9px]">更換</span>
+          </label>
           <div>
             <p className="text-[10px] text-white/50 uppercase tracking-widest">Instructor</p>
-            <p className="text-sm font-medium mt-0.5">{display.name}</p>
+            <p className="text-sm font-medium mt-0.5">{info.name}</p>
             <p className="text-xs text-white/50">{teacher.isLineAccount ? "（LINE 帳號）" : teacher.email}</p>
           </div>
         </div>
@@ -172,72 +265,22 @@ export default function TeacherProfilePage() {
         </div>
       </div>
 
-      <div className="px-4 mt-5 flex flex-col gap-5">
+      <div className="px-4 py-5 flex flex-col gap-6">
 
         {/* 個人資料 */}
         <Section title="個人資料">
-          {editingInfo ? (
-            <div className="px-4 py-4 flex flex-col gap-3">
-              {/* 頭貼 */}
-              <div>
-                <p className="text-xs text-[#aaa] mb-1.5">頭貼</p>
-                <label className="block cursor-pointer group w-16">
-                  <input type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
-                  <div className="w-16 h-16 rounded-full border-2 border-dashed border-[#e8e8e8] group-hover:border-black transition-colors overflow-hidden flex items-center justify-center bg-[#fafaf9]">
-                    {form.photo ? (
-                      <img src={form.photo} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      <Upload size={14} className="text-[#ccc]" />
-                    )}
-                  </div>
-                </label>
-              </div>
-              <div>
-                <label className="text-xs text-[#aaa] mb-1 block">姓名</label>
-                <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className={inputCls} />
-              </div>
-              <div>
-                <label className="text-xs text-[#aaa] mb-1 block">專長</label>
-                <input value={form.specialty} onChange={e => setForm(f => ({ ...f, specialty: e.target.value }))}
-                  placeholder="水彩・油畫…" className={inputCls} />
-              </div>
-              <div>
-                <label className="text-xs text-[#aaa] mb-1 block">電話</label>
-                <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
-                  placeholder="09xx-xxx-xxx" className={inputCls} />
-              </div>
-              <div>
-                <label className="text-xs text-[#aaa] mb-1 block">簡介</label>
-                <textarea value={form.bio} onChange={e => setForm(f => ({ ...f, bio: e.target.value }))}
-                  rows={3} placeholder="教學理念、經歷…"
-                  className={`${inputCls} resize-none`} />
-              </div>
-              <div className="flex gap-2 mt-1">
-                <button
-                  onClick={() => { setEditingInfo(false); setForm({ name: teacher.name, specialty: teacher.specialty, phone: teacher.phone, bio: teacher.bio, photo: display.photoUrl ?? "" }) }}
-                  className="flex-1 py-2.5 text-sm border border-[#f0f0f0] rounded-xl"
-                >
-                  取消
-                </button>
-                <button
-                  onClick={saveInfo}
-                  disabled={busy || !form.name.trim()}
-                  className="flex-1 py-2.5 text-sm bg-black text-white rounded-xl disabled:opacity-40"
-                >
-                  {busy ? "儲存中…" : "儲存"}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <button onClick={() => setEditingInfo(true)}
-              className="w-full flex items-center justify-between px-4 py-3.5 text-left">
-              <span className="text-sm">編輯個人資料</span>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-[#aaa]">{display.specialty || "—"}</span>
-                <ChevronRight size={16} className="text-[#ccc]" />
-              </div>
-            </button>
-          )}
+          <EditableRow label="顯示名稱" value={info.name} busy={busy}
+            onSave={v => v.trim() ? saveField({ name: v }) : Promise.resolve(false)} />
+          <EditableRow label="專長" value={info.specialty} placeholder="水彩・油畫…" busy={busy}
+            onSave={v => saveField({ specialty: v })} />
+          <EditableRow label="電話" value={info.phone} placeholder="09xx-xxx-xxx" busy={busy}
+            onSave={v => saveField({ phone: v })} />
+          <EditableRow label="簡介" value={info.bio} placeholder="教學理念、經歷…" multiline busy={busy}
+            onSave={v => saveField({ bio: v })} />
+          <div className="flex items-center justify-between px-4 py-3.5">
+            <span className="text-sm">電子信箱</span>
+            <span className="text-sm text-[#aaa]">{teacher.isLineAccount ? "（LINE 帳號）" : teacher.email || "—"}</span>
+          </div>
         </Section>
 
         {/* 安全性 */}
@@ -248,7 +291,7 @@ export default function TeacherProfilePage() {
               <p className="text-xs text-[#aaa] mt-0.5">此帳號透過 LINE 登入，無需密碼</p>
             </div>
           ) : editingPwd ? (
-            <div className="px-4 py-4 flex flex-col gap-2">
+            <div className="px-4 py-3.5 flex flex-col gap-2">
               <label className="text-xs text-[#aaa]">舊密碼</label>
               <div className="relative">
                 <input type={showOld ? "text" : "password"} value={oldPwd}
@@ -271,29 +314,43 @@ export default function TeacherProfilePage() {
               </div>
               <div className="flex gap-2 mt-1">
                 <button onClick={() => { setEditingPwd(false); setOldPwd(""); setNewPwd("") }}
-                  className="flex-1 py-2.5 text-sm border border-[#f0f0f0] rounded-xl">
+                  className="flex-1 py-2 text-sm border border-[#f0f0f0] rounded-xl">
                   取消
                 </button>
                 <button disabled={busy || !oldPwd || newPwd.length < 8} onClick={savePassword}
-                  className="flex-1 py-2.5 text-sm bg-black text-white rounded-xl disabled:opacity-40">
+                  className="flex-1 py-2 text-sm bg-black text-white rounded-xl disabled:opacity-40">
                   {busy ? "更新中…" : "更新密碼"}
                 </button>
               </div>
             </div>
           ) : (
-            <button onClick={() => setEditingPwd(true)}
-              className="w-full flex items-center justify-between px-4 py-3.5 text-left">
-              <span className="text-sm">修改密碼</span>
-              <ChevronRight size={16} className="text-[#ccc]" />
-            </button>
+            <Row label="修改密碼" onClick={() => setEditingPwd(true)} />
           )}
+          <div className="flex items-center justify-between px-4 py-3.5">
+            <div>
+              <p className="text-sm">LINE 帳號綁定</p>
+              <p className="text-xs text-[#aaa] mt-0.5">{teacher.lineBound ? "已綁定" : "使用 LINE 登入即自動綁定"}</p>
+            </div>
+            {teacher.lineBound
+              ? <span className="text-xs text-[#22c55e] font-medium">已綁定</span>
+              : <span className="text-xs text-[#ccc]">未綁定</span>
+            }
+          </div>
         </Section>
 
-        {/* History */}
+        {/* 通知設定 */}
+        <Section title="通知設定">
+          <Toggle label="課程提醒" value={notifyCourse}
+            onChange={() => setNotifyCourse(v => { saveNotify(!v, notifySystem); return !v })} />
+          <Toggle label="系統通知" value={notifySystem}
+            onChange={() => setNotifySystem(v => { saveNotify(notifyCourse, !v); return !v })} />
+        </Section>
+
+        {/* 點名紀錄 */}
         <div>
           <p className="text-[10px] text-[#aaa] uppercase tracking-widest mb-3">點名紀錄</p>
           {history.length === 0 ? (
-            <p className="text-sm text-[#ccc] py-4">尚無點名紀錄</p>
+            <p className="text-sm text-[#ccc] py-2">尚無點名紀錄</p>
           ) : (
             <div className="bg-white rounded-xl divide-y divide-[#f5f5f5] border border-[#f0f0f0]">
               {history.map((record) => {
@@ -315,12 +372,41 @@ export default function TeacherProfilePage() {
           )}
         </div>
 
-        {/* Logout */}
-        <button onClick={handleLogout}
-          className="w-full py-3 text-sm text-red-500 bg-white border border-[#f0f0f0] rounded-xl">
-          登出
-        </button>
+        {/* 帳號 */}
+        <Section title="帳號">
+          <button
+            onClick={() => setLogoutConfirm(true)}
+            className="w-full flex items-center px-4 py-3.5 text-sm text-red-500"
+          >
+            登出
+          </button>
+        </Section>
+
       </div>
+
+      {/* Logout confirm overlay */}
+      {logoutConfirm && (
+        <div className="fixed inset-0 bg-black/40 flex items-end justify-center z-[60]">
+          <div className="bg-white rounded-t-2xl w-full max-w-md px-5 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
+            <p className="text-base font-medium mb-1">確定登出？</p>
+            <p className="text-sm text-[#aaa] mb-5">您的資料將安全保存，下次可重新登入。</p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={handleLogout}
+                className="block w-full py-3 text-sm text-center bg-black text-white rounded-xl"
+              >
+                確認登出
+              </button>
+              <button
+                onClick={() => setLogoutConfirm(false)}
+                className="w-full py-3 text-sm border border-[#f0f0f0] rounded-xl"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="h-6" />
     </div>

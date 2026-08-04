@@ -12,6 +12,7 @@ export type TeacherMe = {
   bio: string
   photoUrl: string | null
   isLineAccount: boolean
+  lineBound: boolean
 }
 
 /** 取得目前登入者的教師身分；非教師時導回教師登入頁 */

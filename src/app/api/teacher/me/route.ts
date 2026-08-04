@@ -63,6 +63,7 @@ export async function GET() {
       bio: teacher.bio ?? "",
       photoUrl: teacher.photo_url ?? profile.avatar_url ?? null,
       isLineAccount: (user.email ?? "").endsWith("@findtheway.app"),
+      lineBound: !!(profile.line_user_id || teacher.line_user_id),
     },
   })
 }
