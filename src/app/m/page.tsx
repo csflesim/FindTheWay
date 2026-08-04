@@ -84,8 +84,9 @@ export default function MobileHomePage() {
       const user = userRes.data.user
       if (user) {
         const { data: profile } = await supabase
-          .from("profiles").select("name, avatar_url").eq("id", user.id).maybeSingle()
-        if (profile) setMe({ name: profile.name || "會員", avatar: profile.avatar_url })
+          .from("profiles").select("name, avatar_url, role").eq("id", user.id).maybeSingle()
+        // 前台只認會員身分（教師/後台人員各自有專區）
+        if (profile?.role === "member") setMe({ name: profile.name || "會員", avatar: profile.avatar_url })
       }
       setLoading(false)
     })

@@ -45,12 +45,13 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
       const user = userRes.data.user
       if (user) {
         const [{ data: profile }, { data: paidOrders }] = await Promise.all([
-          supabase.from("profiles").select("id, name").eq("id", user.id).maybeSingle(),
+          supabase.from("profiles").select("id, name, role").eq("id", user.id).maybeSingle(),
           supabase.from("orders")
             .select("id, order_no, item_name, tickets(id, status)")
             .eq("status", "已付款"),
         ])
-        if (profile) setMe({ id: profile.id, name: profile.name || "會員" })
+        // 前台報名僅限會員身分
+        if (profile?.role === "member") setMe({ id: profile.id, name: profile.name || "會員" })
         const avail = ((paidOrders ?? []) as unknown as {
           id: string; order_no: string; item_name: string
           tickets: { id: string; status: string }[]
