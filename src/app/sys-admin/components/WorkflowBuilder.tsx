@@ -374,9 +374,15 @@ export default function WorkflowBuilder({ config }: { config: WorkflowConfig }) 
       pushLog(r.ok ? `🟢 LINE 已送出 ✓` : `🟢 LINE 失敗：${r.error}`, r.ok ? "ok" : "err")
     }
 
-    let current: FlowNode | undefined = trigger; let steps = 0
-    while (current && steps < 50) {
-      steps++; setActiveId(current.id)
+    // 廣度優先走訪：一個節點連出多條線（如觸發 → Email + LINE）時全部執行
+    const executed = new Set<string>()
+    const queue: FlowNode[] = [trigger]
+    let steps = 0
+    while (queue.length > 0 && steps < 50) {
+      const current = queue.shift()!
+      if (executed.has(current.id)) continue
+      executed.add(current.id); steps++
+      setActiveId(current.id)
       if (current.kind === "trigger")    pushLog(`⚡ 觸發：${nodeSubtitle(current)}`, "info")
       else if (current.kind === "email")  await doEmail(current.template)
       else if (current.kind === "line")   await doLine(current.template)
@@ -385,10 +391,11 @@ export default function WorkflowBuilder({ config }: { config: WorkflowConfig }) 
       else if (current.kind === "delay")  pushLog(`⏱️ 等待 ${nodeSubtitle(current)} 後繼續…（測試模式跳過等待）`, "info")
       else if (current.kind === "condition") pushLog(`🔀 判斷 ${nodeSubtitle(current)} → 成立，走「是」分支`, "branch")
       await sleep(650)
-      const here: FlowNode = current
-      const port: Port = here.kind === "condition" ? "true" : "out"
-      const nextEdge = edges.find(e => e.from === here.id && e.fromPort === port)
-      current = nextEdge ? nodes.find(n => n.id === nextEdge.to) : undefined
+      const followPort: Port = current.kind === "condition" ? "true" : "out"
+      for (const e of edges.filter(e => e.from === current.id && e.fromPort === followPort)) {
+        const n = nodes.find(x => x.id === e.to)
+        if (n && !executed.has(n.id)) queue.push(n)
+      }
     }
     setActiveId(null); pushLog("✅ 流程執行結束", "ok")
     setRunning(false); setLastRun(new Date().toTimeString().slice(0, 8)); setRunCount(c => c + 1)
