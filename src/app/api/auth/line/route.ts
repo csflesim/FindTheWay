@@ -27,9 +27,20 @@ export async function GET(req: Request) {
   })
 
   // 登入成功後要導回的頁面（僅允許站內路徑）
-  const next = new URL(req.url).searchParams.get("next")
+  const url = new URL(req.url)
+  const next = url.searchParams.get("next")
   if (next && next.startsWith("/") && !next.startsWith("//")) {
     res.cookies.set("line_next", next, {
+      httpOnly: true,
+      sameSite: "lax",
+      maxAge: 300,
+      path: "/",
+    })
+  }
+
+  // whoami 模式：只取 LINE User ID 帶回頁面，不建立/切換登入 session
+  if (url.searchParams.get("mode") === "whoami") {
+    res.cookies.set("line_mode", "whoami", {
       httpOnly: true,
       sameSite: "lax",
       maxAge: 300,

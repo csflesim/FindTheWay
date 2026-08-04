@@ -178,6 +178,18 @@ export default function WorkflowBuilder({ config }: { config: WorkflowConfig }) 
         if (typeof p.lineId === "string") setTestLineId(p.lineId)
       }
     } catch {}
+    // LINE whoami 授權回來：自動填入取得的 User ID
+    try {
+      const q = new URLSearchParams(window.location.search)
+      const uid = q.get("lineUserId")
+      if (uid) {
+        setTestLineId(uid)
+        const name = q.get("lineName")
+        showToast(`已取得 ${name ? `${name} 的 ` : ""}LINE User ID`, "success")
+        window.history.replaceState({}, "", window.location.pathname)
+      }
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   useEffect(() => {
     try { localStorage.setItem("ftw.workflow-test.v1", JSON.stringify({ email: testEmail, lineId: testLineId })) } catch {}
@@ -468,12 +480,21 @@ export default function WorkflowBuilder({ config }: { config: WorkflowConfig }) 
               placeholder="測試 Email（選填）"
               className="w-44 px-2.5 py-1.5 rounded-lg border border-[#f0f0f0] text-xs outline-none focus:border-black transition bg-white"
             />
-            <input
-              value={testLineId}
-              onChange={e => setTestLineId(e.target.value)}
-              placeholder="測試 LINE User ID（選填）"
-              className="w-48 px-2.5 py-1.5 rounded-lg border border-[#f0f0f0] text-xs outline-none focus:border-black transition bg-white"
-            />
+            <div className="relative">
+              <input
+                value={testLineId}
+                onChange={e => setTestLineId(e.target.value)}
+                placeholder="測試 LINE User ID（選填）"
+                className="w-56 pl-2.5 pr-20 py-1.5 rounded-lg border border-[#f0f0f0] text-xs outline-none focus:border-black transition bg-white"
+              />
+              <a
+                href={`/api/auth/line?mode=whoami&next=${encodeURIComponent(typeof window !== "undefined" ? window.location.pathname : "/sys-admin/line-workflows")}`}
+                title="以 LINE 授權自動取得你的 User ID（不影響後台登入）"
+                className="absolute right-1 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded-md text-[10px] font-medium text-white bg-[#06C755] hover:bg-[#05b34d] transition"
+              >
+                LINE 取得
+              </a>
+            </div>
             <button onClick={runFlow} disabled={running} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-black hover:bg-[#222] disabled:opacity-50 transition"
               title={testEmail.trim() || testLineId.trim() ? "會真實發送到填入的目標" : "未填目標，僅模擬執行"}>
               {running ? "執行中…" : "▶ 測試觸發"}

@@ -33,6 +33,21 @@ export async function GET(req: NextRequest) {
     }
 
     const profile = await getLineProfile(tokenData.access_token)
+
+    // whoami 模式：不動現有 session，直接把 LINE User ID 帶回來源頁面
+    if (req.cookies.get("line_mode")?.value === "whoami") {
+      const rawNext = req.cookies.get("line_next")?.value
+      const next = rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/sys-admin"
+      const dest = new URL(next, BASE)
+      dest.searchParams.set("lineUserId", profile.userId)
+      dest.searchParams.set("lineName", profile.displayName ?? "")
+      const res = NextResponse.redirect(dest)
+      res.cookies.delete("line_state")
+      res.cookies.delete("line_next")
+      res.cookies.delete("line_mode")
+      return res
+    }
+
     const syntheticEmail = `line_${profile.userId}@findtheway.app`
 
     const admin = createAdminClient()
