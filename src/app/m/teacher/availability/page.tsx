@@ -28,7 +28,7 @@ export default function AvailabilityPage() {
     setShowForm(false)
   }
 
-  function remove(id: number) {
+  function remove(id: string) {
     removeBlock(id)
   }
 

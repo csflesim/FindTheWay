@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { ChevronDown } from "lucide-react"
+import { createClient } from "@/lib/supabase/client"
 
 type AbsentType = "defer" | "no_defer"
 
@@ -12,7 +13,7 @@ type StudentAtt = {
 }
 
 type Session = {
-  id: number
+  id: string
   title: string
   date: string
   dayLabel: string
@@ -22,56 +23,39 @@ type Session = {
   students: StudentAtt[]
 }
 
-const ALL_SESSIONS: Session[] = [
-  {
-    id: 1, title: "兒童創意素描", date: "2026-06-14", dayLabel: "週六",
-    time: "14:00–15:30", teacher: "小紫老師", studio: "A",
-    students: [
-      { name: "鄭小德", present: true },
-      { name: "鄭小明", present: true },
-      { name: "賴小柏", present: false, absentType: "defer" },
-      { name: "賴小紫", present: false, absentType: "no_defer" },
-    ],
-  },
-  {
-    id: 2, title: "親子藝術探索", date: "2026-06-15", dayLabel: "週日",
-    time: "14:00–15:30", teacher: "小紫老師", studio: "B",
-    students: [
-      { name: "鄭小德", present: true },
-      { name: "賴小柏", present: true },
-      { name: "賴小紫", present: true },
-    ],
-  },
-  {
-    id: 3, title: "基礎水彩入門", date: "2026-06-18", dayLabel: "週三",
-    time: "10:00–12:00", teacher: "明德老師", studio: "A",
-    students: [
-      { name: "鄭小德", present: true },
-      { name: "鄭小明", present: false, absentType: "defer" },
-    ],
-  },
-  {
-    id: 4, title: "兒童創意素描", date: "2026-06-21", dayLabel: "週六",
-    time: "14:00–15:30", teacher: "小紫老師", studio: "A",
-    students: [
-      { name: "鄭小德", present: true }, { name: "鄭小明", present: true },
-      { name: "賴小柏", present: true }, { name: "賴小紫", present: true },
-    ],
-  },
-  {
-    id: 5, title: "成人油畫工作坊", date: "2026-06-21", dayLabel: "週六",
-    time: "19:00–21:00", teacher: "明德老師", studio: "B",
-    students: [{ name: "林小雅", present: true }],
-  },
-  {
-    id: 6, title: "水墨入門體驗", date: "2026-06-24", dayLabel: "週二",
-    time: "19:00–21:00", teacher: "明德老師", studio: "C",
-    students: [
-      { name: "鄭小德", present: true },
-      { name: "賴小柏", present: false, absentType: "no_defer" },
-    ],
-  },
-]
+const DAYS = ["日", "一", "二", "三", "四", "五", "六"]
+
+type AttRow = {
+  id: string
+  date: string
+  records: { name: string; status: string }[]
+  course: {
+    title: string
+    schedule: string
+    classroom: { name: string } | null
+    course_teachers: { teacher: { name: string } | null }[]
+  } | null
+}
+
+function rowToSession(r: AttRow): Session {
+  const dateIso = r.date.replace(/\//g, "-")   // "YYYY/MM/DD" → "YYYY-MM-DD"
+  const d = new Date(dateIso + "T00:00:00")
+  const time = r.course?.schedule.split(" ")[1] ?? ""
+  return {
+    id: r.id,
+    title: r.course?.title ?? "—",
+    date: dateIso,
+    dayLabel: isNaN(d.getTime()) ? "" : `週${DAYS[d.getDay()]}`,
+    time,
+    teacher: (r.course?.course_teachers ?? []).map(ct => ct.teacher?.name).filter(Boolean).join("、") || "—",
+    studio: r.course?.classroom?.name ?? "—",
+    students: (r.records ?? []).map(x => ({
+      name: x.name,
+      present: x.status === "出席",
+      absentType: x.status === "出席" ? undefined : x.status === "延期" ? "defer" as const : "no_defer" as const,
+    })),
+  }
+}
 
 const absentTypeLabel: Record<AbsentType, string> = {
   defer:    "延期補課",
@@ -88,7 +72,7 @@ function mmdd(date: string) {
 }
 
 function thisMonthRange() {
-  const now = new Date("2026-06-14")
+  const now = new Date()
   const y = now.getFullYear(), m = now.getMonth()
   return {
     start: `${y}-${String(m + 1).padStart(2, "0")}-01`,
@@ -97,7 +81,7 @@ function thisMonthRange() {
 }
 
 function lastMonthRange() {
-  const now = new Date("2026-06-14")
+  const now = new Date()
   const y = now.getFullYear(), m = now.getMonth() - 1
   const ym = m < 0 ? y - 1 : y, mm = ((m % 12) + 12) % 12
   return {
@@ -123,7 +107,7 @@ function CourseRow({ session }: { session: Session }) {
           <div className="min-w-0">
             <p className="text-sm font-medium">{session.title}</p>
             <p className="text-xs text-[#999] mt-0.5">
-              {mmdd(session.date)} {session.dayLabel} · {session.time} · Studio {session.studio} · {session.teacher}
+              {mmdd(session.date)} {session.dayLabel} · {session.time} · {session.studio} · {session.teacher}
             </p>
           </div>
           <div className="flex items-center gap-4 shrink-0">
@@ -203,7 +187,10 @@ function CourseRow({ session }: { session: Session }) {
 }
 
 export default function RosterPage() {
+  const supabase = useMemo(() => createClient(), [])
   const defaultRange = thisMonthRange()
+  const [sessions, setSessions] = useState<Session[]>([])
+  const [loading, setLoading] = useState(true)
   const [startInput, setStartInput] = useState(defaultRange.start)
   const [endInput,   setEndInput]   = useState(defaultRange.end)
   const [applied,    setApplied]    = useState(defaultRange)
@@ -211,14 +198,25 @@ export default function RosterPage() {
   const [filterCourse,  setFilterCourse]  = useState("全部")
   const [filterTeacher, setFilterTeacher] = useState("全部")
 
+  useEffect(() => {
+    supabase.from("course_attendance")
+      .select("id, date, records, course:courses(title, schedule, classroom:classrooms(name), course_teachers(teacher:teachers(name)))")
+      .order("date", { ascending: false })
+      .then(({ data, error }) => {
+        if (error) console.error("載入出席紀錄失敗:", error.message)
+        else setSessions((data as unknown as AttRow[]).map(rowToSession))
+        setLoading(false)
+      })
+  }, [supabase])
+
   function apply() {
     setApplied({ start: startInput, end: endInput })
     setDateTab("全部"); setFilterCourse("全部"); setFilterTeacher("全部")
   }
 
   const inRange = useMemo(() =>
-    ALL_SESSIONS.filter(s => s.date >= applied.start && s.date <= applied.end),
-    [applied]
+    sessions.filter(s => s.date >= applied.start && s.date <= applied.end),
+    [sessions, applied]
   )
 
   const uniqueDates = useMemo(() =>
@@ -313,7 +311,9 @@ export default function RosterPage() {
         </div>
       )}
 
-      {filtered.length === 0 ? (
+      {loading ? (
+        <p className="text-sm text-[#ccc] py-8 text-center">載入中…</p>
+      ) : filtered.length === 0 ? (
         <p className="text-sm text-[#ccc] py-8 text-center">查無課程</p>
       ) : (
         <div className="flex flex-col gap-4">

@@ -1,9 +1,10 @@
 'use client'
 
-import { createContext, useContext, useState } from "react"
+import { createContext, useContext, useEffect, useMemo, useState } from "react"
+import { createClient } from "@/lib/supabase/client"
 
 export type Block = {
-  id: number
+  id: string
   dateStr: string
   startTime: string
   endTime: string
@@ -13,24 +14,55 @@ export type Block = {
 type CtxType = {
   blocks: Block[]
   addBlock: (b: Omit<Block, "id">) => void
-  removeBlock: (id: number) => void
+  removeBlock: (id: string) => void
 }
 
 const Ctx = createContext<CtxType>({ blocks: [], addBlock: () => {}, removeBlock: () => {} })
 
-const INITIAL: Block[] = [
-  { id: 1, dateStr: "2026-06-19", startTime: "10:00", endTime: "14:00", reason: "家庭事務" },
-  { id: 2, dateStr: "2026-06-25", startTime: "09:00", endTime: "22:00", reason: "出差" },
-]
-
 export function AvailabilityProvider({ children }: { children: React.ReactNode }) {
-  const [blocks, setBlocks] = useState<Block[]>(INITIAL)
+  const supabase = useMemo(() => createClient(), [])
+  const [blocks, setBlocks] = useState<Block[]>([])
+  const [teacherId, setTeacherId] = useState<string | null>(null)
 
-  function addBlock(b: Omit<Block, "id">) {
-    setBlocks((prev) => [...prev, { id: Date.now(), ...b }])
+  useEffect(() => {
+    fetch("/api/teacher/me")
+      .then(r => r.json())
+      .then(async d => {
+        if (!d.teacher) return
+        setTeacherId(d.teacher.id)
+        const { data } = await supabase
+          .from("teacher_availability")
+          .select("id, date, start_time, end_time, reason")
+          .eq("teacher_id", d.teacher.id)
+          .order("date")
+        setBlocks((data ?? []).map(r => ({
+          id: r.id,
+          dateStr: r.date,
+          startTime: String(r.start_time).slice(0, 5),
+          endTime: String(r.end_time).slice(0, 5),
+          reason: r.reason ?? "",
+        })))
+      })
+      .catch(() => {})
+  }, [supabase])
+
+  async function addBlock(b: Omit<Block, "id">) {
+    if (!teacherId) return
+    const { data, error } = await supabase.from("teacher_availability").insert({
+      teacher_id: teacherId,
+      date: b.dateStr,
+      start_time: b.startTime,
+      end_time: b.endTime,
+      reason: b.reason || null,
+    }).select("id").single()
+    if (error) { alert(`新增失敗：${error.message}`); return }
+    setBlocks(prev => [...prev, { ...b, id: data.id }])
   }
-  function removeBlock(id: number) {
-    setBlocks((prev) => prev.filter((b) => b.id !== id))
+
+  async function removeBlock(id: string) {
+    const { error } = await supabase.from("teacher_availability").delete().eq("id", id)
+    if (error) { alert(`刪除失敗：${error.message}`); return }
+    setBlocks(prev => prev.filter(b => b.id !== id))
   }
 
   return <Ctx.Provider value={{ blocks, addBlock, removeBlock }}>{children}</Ctx.Provider>

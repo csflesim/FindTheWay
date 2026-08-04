@@ -125,13 +125,14 @@ create table public.teachers (
   created_at   timestamptz not null default now()
 );
 
--- 教師排班可用時間
+-- 教師請假 / 不可排課時段
 create table public.teacher_availability (
   id         uuid primary key default gen_random_uuid(),
   teacher_id uuid not null references public.teachers(id) on delete cascade,
   date       date not null,
   start_time time not null,
-  end_time   time not null
+  end_time   time not null,
+  reason     text
 );
 create index availability_teacher_idx on public.teacher_availability(teacher_id, date);
 

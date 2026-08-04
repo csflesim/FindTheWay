@@ -1,9 +1,12 @@
 'use client'
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { ChevronLeft, ChevronRight, Bell, X, AlertCircle, Info, Clock } from "lucide-react"
+import { createClient } from "@/lib/supabase/client"
 import { useAvailability, type Block } from "./context/AvailabilityProvider"
+import { useTeacher } from "./_lib/useTeacher"
+import { fetchTeacherCourses, occurrencesInRange, todayStr, attDate, type Occurrence } from "./_lib/teacherData"
 
 type ViewMode = 'list' | 'day' | 'week' | 'month'
 
@@ -11,31 +14,16 @@ const DAYS_SHORT = ["日", "一", "二", "三", "四", "五", "六"]
 const START_HOUR = 9
 const END_HOUR = 22
 const HOUR_H = 52
-const TODAY = "2026-06-13"
+const TODAY = todayStr()
 
-const allCourses = [
-  { id: 1,  title: "基礎水彩入門",  dateStr: "2026-06-06", time: "10:00–12:00", studio: "A", enrolled: 8,  capacity: 10 },
-  { id: 2,  title: "成人油畫工作坊", dateStr: "2026-06-06", time: "19:00–21:00", studio: "B", enrolled: 6,  capacity: 8  },
-  { id: 3,  title: "水墨入門體驗",  dateStr: "2026-06-11", time: "19:00–21:00", studio: "C", enrolled: 5,  capacity: 8  },
-  { id: 4,  title: "基礎水彩入門",  dateStr: "2026-06-13", time: "10:00–12:00", studio: "A", enrolled: 7,  capacity: 10 },
-  { id: 5,  title: "成人油畫工作坊", dateStr: "2026-06-13", time: "19:00–21:00", studio: "B", enrolled: 5,  capacity: 8  },
-  { id: 6,  title: "兒童創意素描",  dateStr: "2026-06-14", time: "14:00–15:30", studio: "A", enrolled: 9,  capacity: 10 },
-  { id: 7,  title: "水墨入門體驗",  dateStr: "2026-06-18", time: "19:00–21:00", studio: "C", enrolled: 4,  capacity: 8  },
-  { id: 8,  title: "基礎水彩入門",  dateStr: "2026-06-20", time: "10:00–12:00", studio: "A", enrolled: 8,  capacity: 10 },
-  { id: 9,  title: "親子藝術探索",  dateStr: "2026-06-21", time: "14:00–15:30", studio: "B", enrolled: 6,  capacity: 8  },
-  { id: 10, title: "成人油畫工作坊", dateStr: "2026-06-27", time: "19:00–21:00", studio: "B", enrolled: 5,  capacity: 8  },
-  { id: 11, title: "基礎水彩入門",  dateStr: "2026-06-28", time: "10:00–12:00", studio: "A", enrolled: 7,  capacity: 10 },
-]
+// 模組層資料：TeacherCoursesPage 載入後填入，父層 re-render 讓各檢視元件讀到新值
+let allCourses: Occurrence[] = []
 
 // ── Notice bar ────────────────────────────────────────────────
 type NoticeLevel = "urgent" | "reminder" | "info"
 type Notice = { id: number; level: NoticeLevel; text: string; href?: string }
 
-const MOCK_NOTICES: Notice[] = [
-  { id: 1, level: "urgent",   text: "今天 19:00 成人油畫工作坊 尚未點名",   href: "/m/teacher/attendance?id=5" },
-  { id: 2, level: "reminder", text: "明天 14:00 兒童創意素描（Studio A）", href: "/m/teacher" },
-  { id: 3, level: "info",     text: "排班確認截止 6/15，請盡早更新可排時間", href: "/m/teacher/availability" },
-]
+let NOTICES: Notice[] = []
 
 const NOTICE_STYLE: Record<NoticeLevel, { bg: string; icon: React.ElementType; iconColor: string }> = {
   urgent:   { bg: "bg-red-50 border-red-100",    icon: AlertCircle, iconColor: "text-red-500"    },
@@ -45,7 +33,7 @@ const NOTICE_STYLE: Record<NoticeLevel, { bg: string; icon: React.ElementType; i
 
 function NoticeBar() {
   const [dismissed, setDismissed] = useState<Set<number>>(new Set())
-  const visible = MOCK_NOTICES.filter(n => !dismissed.has(n.id))
+  const visible = NOTICES.filter(n => !dismissed.has(n.id))
 
   if (visible.length === 0) return null
 
@@ -475,12 +463,46 @@ function ListView() {
 
 // ── Main ──────────────────────────────────────────────────────
 export default function TeacherCoursesPage() {
+  const supabase = useMemo(() => createClient(), [])
+  const { teacher, loading: teacherLoading } = useTeacher()
   const { blocks } = useAvailability()
+  const [dataReady, setDataReady] = useState(false)
   const [view, setView] = useState<ViewMode>("month")
   const [selectedDate, setSelectedDate] = useState(TODAY)
   const [monthSelectedDate, setMonthSelectedDate] = useState<string | null>(TODAY)
   const [weekStart, setWeekStart] = useState(getWeekStart(TODAY))
-  const [monthNav, setMonthNav] = useState({ year: 2026, month: 5 })
+  const now = new Date()
+  const [monthNav, setMonthNav] = useState({ year: now.getFullYear(), month: now.getMonth() })
+
+  useEffect(() => {
+    if (!teacher) return
+    ;(async () => {
+      const courses = await fetchTeacherCourses(supabase, teacher.id)
+      const start = new Date(); start.setDate(start.getDate() - 60)
+      const end = new Date(); end.setDate(end.getDate() + 90)
+      allCourses = occurrencesInRange(courses, start, end)
+
+      // 通知：今天尚未點名的場次（緊急）、明天的場次（提醒）
+      const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1)
+      const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, "0")}-${String(tomorrow.getDate()).padStart(2, "0")}`
+      const todayOccs = allCourses.filter(o => o.dateStr === TODAY)
+      const { data: todayAtt } = await supabase
+        .from("course_attendance")
+        .select("course_id")
+        .eq("date", attDate(TODAY))
+      const attended = new Set((todayAtt ?? []).map(a => a.course_id))
+      const notices: Notice[] = []
+      let nid = 1
+      for (const o of todayOccs.filter(o => !attended.has(o.courseId))) {
+        notices.push({ id: nid++, level: "urgent", text: `今天 ${o.time.split("–")[0]} ${o.title} 尚未點名`, href: "/m/teacher/attendance" })
+      }
+      for (const o of allCourses.filter(o => o.dateStr === tomorrowStr)) {
+        notices.push({ id: nid++, level: "reminder", text: `明天 ${o.time.split("–")[0]} ${o.title}${o.studio ? `（${o.studio}）` : ""}` })
+      }
+      NOTICES = notices
+      setDataReady(true)
+    })()
+  }, [teacher, supabase])
 
   const views: { key: ViewMode; label: string }[] = [
     { key: "list", label: "清單" },
@@ -498,7 +520,12 @@ export default function TeacherCoursesPage() {
     setMonthSelectedDate(prev => prev === ds ? null : ds)
   }
 
-  const unread = MOCK_NOTICES.length
+  const unread = NOTICES.length
+
+  if (teacherLoading || (teacher && !dataReady)) {
+    return <div className="min-h-screen flex items-center justify-center text-[#ccc] text-sm">載入中…</div>
+  }
+  if (!teacher) return null
 
   return (
     <div>
