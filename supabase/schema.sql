@@ -309,14 +309,17 @@ create table public.message_templates (
   line_on       boolean not null default false,
   email_subject text,
   email_html    text,
-  line_text     text
+  line_text     text,
+  email         jsonb,   -- 訊息管理設計器：{ subject, mode, blocks, html }
+  line          jsonb    -- 訊息管理設計器：LineFlex 結構（可轉 Flex Message）
 );
 
 create table public.workflows (
-  id          uuid primary key default gen_random_uuid(),
+  id          text primary key,                 -- 前端產生（"wf_..."）
   name        text not null,
   description text,
   enabled     boolean not null default false,
+  variant     text not null default 'general',  -- general / social
   nodes       jsonb not null default '[]',
   edges       jsonb not null default '[]',
   created_at  timestamptz not null default now()

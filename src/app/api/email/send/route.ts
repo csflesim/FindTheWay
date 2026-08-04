@@ -1,6 +1,17 @@
 import { NextRequest, NextResponse } from "next/server"
 import { sendEmail } from "@/lib/email"
 import { requireStaff } from "@/lib/admin-guard"
+import { createAdminClient } from "@/lib/supabase/admin"
+
+async function logSend(recipient: string, subject: string, ok: boolean, error?: string) {
+  try {
+    await createAdminClient().from("message_logs").insert({
+      channel: "email", recipient, subject,
+      status: ok ? "sent" : "failed",
+      error: error ?? null,
+    })
+  } catch { /* 記錄失敗不影響發送結果 */ }
+}
 
 export async function POST(req: NextRequest) {
   if (!(await requireStaff())) {
@@ -17,7 +28,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "html 與 text 至少需提供一項" }, { status: 400 })
     }
 
+    const recipient = Array.isArray(to) ? to.join(", ") : String(to)
     const result = await sendEmail({ to, subject, html, text, from, replyTo, cc, bcc })
+    await logSend(recipient, subject, result.ok, result.ok ? undefined : result.error)
     return NextResponse.json(result, { status: result.ok ? 200 : 502 })
   } catch {
     return NextResponse.json({ ok: false, error: "伺服器錯誤" }, { status: 500 })

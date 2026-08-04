@@ -1,4 +1,6 @@
-// 訊息管理（ftw.msg.templates.v2）模板的共用讀取與轉換：
+import type { SupabaseClient } from "@supabase/supabase-js"
+
+// 訊息管理模板的共用讀取與轉換：
 // - 把訊息管理設計的 LineFlex 結構轉成真正的 LINE Flex Message JSON
 // - 供工作流測試觸發等發送情境使用
 
@@ -56,6 +58,44 @@ export function loadMsgTemplates(): MsgTemplate[] {
   } catch {
     return []
   }
+}
+
+/* ─── DB 版本（message_templates 表，設計內容存 email / line jsonb） ─── */
+
+type TplRow = {
+  id: string
+  name: string
+  email_on: boolean
+  line_on: boolean
+  email: MsgTemplate["email"] | null
+  line: LineFlexDef | null
+}
+
+export async function fetchMsgTemplates(supabase: SupabaseClient): Promise<MsgTemplate[]> {
+  const { data, error } = await supabase.from("message_templates")
+    .select("id, name, email_on, line_on, email, line")
+  if (error || !Array.isArray(data)) return []
+  return (data as TplRow[])
+    .filter(r => r.email || r.line)   // 只取設計器模板（略過舊 seed 純旗標列）
+    .map(r => ({
+      id: r.id, name: r.name, emailOn: r.email_on, lineOn: r.line_on,
+      email: r.email ?? { subject: "", mode: "blocks", blocks: [], html: "" },
+      line: r.line ?? { mode: "text", text: "", altText: "", header: { enabled: false, text: "", bg: "#111111", color: "#ffffff" }, hero: { enabled: false, url: "" }, body: [], footer: [] },
+    }))
+}
+
+export async function upsertMsgTemplates(supabase: SupabaseClient, tpls: MsgTemplate[]): Promise<string | null> {
+  if (tpls.length === 0) return null
+  const { error } = await supabase.from("message_templates").upsert(tpls.map(t => ({
+    id: t.id, name: t.name, email_on: t.emailOn, line_on: t.lineOn,
+    email: t.email, line: t.line,
+  })))
+  return error ? error.message : null
+}
+
+export async function deleteMsgTemplate(supabase: SupabaseClient, id: string): Promise<string | null> {
+  const { error } = await supabase.from("message_templates").delete().eq("id", id)
+  return error ? error.message : null
 }
 
 /* ─── 變數填充（測試用範例值） ─── */

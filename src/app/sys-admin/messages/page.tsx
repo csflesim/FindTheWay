@@ -1,8 +1,10 @@
 'use client'
 
-import React, { useState, useRef, useEffect } from "react"
+import React, { useState, useMemo, useRef, useEffect } from "react"
 import { Plus, Trash2, Send, Users, User, Clock, CheckCircle2, XCircle, Loader2 } from "lucide-react"
 import { saveStoredTemplates } from "@/lib/templateStore"
+import { createClient } from "@/lib/supabase/client"
+import { fetchMsgTemplates, upsertMsgTemplates, deleteMsgTemplate } from "@/lib/msg-templates"
 
 /* ─── uid helper ─── */
 let seq = 0
@@ -149,38 +151,41 @@ function newTemplate(name: string): Template {
 const clone = (t: Template): Template => JSON.parse(JSON.stringify(t))
 
 const STORAGE_KEY = "ftw.msg.templates.v2"
-const loadTpls = (): Template[] => { try { const s = localStorage.getItem(STORAGE_KEY); return s ? JSON.parse(s) : [] } catch { return [] } }
-const saveTpls = (l: Template[]) => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(l)) } catch {} }
+// 舊 localStorage 模板（一次性遷移進 DB 用）
+const loadLegacyTpls = (): Template[] => { try { const s = localStorage.getItem(STORAGE_KEY); return s ? JSON.parse(s) : [] } catch { return [] } }
 
 const sizeClass: Record<TextSize, string> = { sm: "text-[9px]", md: "text-[11px]", lg: "text-[13px]", xl: "text-[15px]" }
 const alignClass: Record<Align, string>   = { start: "text-left", center: "text-center", end: "text-right" }
 
-/* ─── Send history ─── */
-type SendEntry = { id: number; ch: "LINE" | "Email"; target: string; content: string; sentAt: string; ok: boolean }
-const MOCK_HIST: SendEntry[] = [
-  { id: 1, ch: "LINE",  target: "全體推播",                 content: "課程提醒：水彩入門，明天 14:00",    sentAt: "2025-06-10 14:32", ok: true  },
-  { id: 2, ch: "Email", target: "purple@findtheway.com",   content: "課前提醒：親子藝術探索",            sentAt: "2025-06-08 09:15", ok: true  },
-  { id: 3, ch: "LINE",  target: "全體推播",                 content: "新課程上架通知",                    sentAt: "2025-06-05 10:00", ok: false },
-]
+/* ─── Send history（message_logs 表） ─── */
+type SendEntry = { id: string; ch: "LINE" | "Email"; target: string; content: string; sentAt: string; ok: boolean }
 
 /* ══════════════════════════════════════════════════════ */
 export default function MessagesPage() {
+  const supabase = useMemo(() => createClient(), [])
   const [templates, setTemplates] = useState<Template[]>([])
   const [activeId,  setActiveId]  = useState("")
   const [draft,     setDraft]     = useState<Template | null>(null)
   const [ready,     setReady]     = useState(false)
 
   useEffect(() => {
-    const stored = loadTpls()
-    const list = stored.length ? stored : (() => { const t = newTemplate("課程提醒"); t.id = "tpl_default"; return [t] })()
-    setTemplates(list); setActiveId(list[0].id); setDraft(clone(list[0])); setReady(true)
-  }, [])
+    (async () => {
+      // 優先讀 DB；DB 為空時把舊 localStorage 模板遷移進去，再不然建預設
+      let list = (await fetchMsgTemplates(supabase)) as unknown as Template[]
+      if (list.length === 0) {
+        const legacy = loadLegacyTpls()
+        list = legacy.length ? legacy : (() => { const t = newTemplate("課程提醒"); t.id = "tpl_default"; return [t] })()
+        await upsertMsgTemplates(supabase, list as never)
+      }
+      setTemplates(list); setActiveId(list[0].id); setDraft(clone(list[0])); setReady(true)
+    })()
+  }, [supabase])
 
   useEffect(() => {
     if (!ready) return
-    saveTpls(templates)
+    upsertMsgTemplates(supabase, templates as never).then(err => { if (err) alert(`模板儲存失敗：${err}`) })
     saveStoredTemplates(templates.map(t => ({ id: t.id, name: t.name, emailOn: t.emailOn, lineOn: t.lineOn })))
-  }, [templates, ready])
+  }, [templates, ready, supabase])
 
   const committed = templates.find(t => t.id === activeId)
   const dirty = ready && draft && committed ? JSON.stringify(draft) !== JSON.stringify(committed) : false
@@ -203,6 +208,7 @@ export default function MessagesPage() {
     if (templates.length <= 1) return
     const rest = templates.filter(t => t.id !== id)
     setTemplates(rest)
+    deleteMsgTemplate(supabase, id)
     if (activeId === id) { setActiveId(rest[0].id); setDraft(clone(rest[0])) }
   }
 
@@ -246,9 +252,27 @@ export default function MessagesPage() {
   const [eBody,      setEBody]      = useState("")
   const [eSending,   setESending]   = useState(false)
   const [sendResult, setSendResult] = useState<{ok:boolean;msg:string}|null>(null)
-  const [history,    setHistory]    = useState<SendEntry[]>(MOCK_HIST)
+  const [history,    setHistory]    = useState<SendEntry[]>([])
 
-  const addHistory = (e: Omit<SendEntry,"id">) => setHistory(p => [{ id: Date.now(), ...e }, ...p])
+  useEffect(() => {
+    supabase.from("message_logs")
+      .select("id, channel, recipient, subject, body, status, created_at")
+      .order("created_at", { ascending: false })
+      .limit(50)
+      .then(({ data }) => {
+        if (!data) return
+        setHistory(data.map(r => ({
+          id: r.id,
+          ch: r.channel === "line" ? "LINE" as const : "Email" as const,
+          target: r.recipient,
+          content: r.subject || r.body || "—",
+          sentAt: new Date(r.created_at).toLocaleString("zh-TW", { hour12: false }),
+          ok: r.status === "sent",
+        })))
+      })
+  }, [supabase])
+
+  const addHistory = (e: Omit<SendEntry,"id">) => setHistory(p => [{ id: `local-${Date.now()}`, ...e }, ...p])
 
   async function handleLineSend() {
     if (lTarget === "specific" && !lUserId.trim()) return

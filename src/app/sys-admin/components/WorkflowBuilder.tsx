@@ -3,9 +3,10 @@
 import React, { useRef, useState, useEffect, useCallback } from "react"
 import { useToast } from "./Toast"
 import { useConfirm } from "./Confirm"
+import { createClient } from "@/lib/supabase/client"
 import { loadStoredTemplates, DEFAULT_STORED_TEMPLATES, type StoredTemplate } from "@/lib/templateStore"
-import { loadMsgTemplates, buildLineMessage, emailHtmlOf, fillVars, type MsgTemplate } from "@/lib/msg-templates"
-import { loadWorkflows, saveWorkflows, type SavedWorkflow } from "@/lib/workflowStore"
+import { fetchMsgTemplates, buildLineMessage, emailHtmlOf, fillVars, type MsgTemplate } from "@/lib/msg-templates"
+import { fetchWorkflowsDb, upsertWorkflowsDb, deleteWorkflowDb, type SavedWorkflow } from "@/lib/workflowStore"
 
 /* ─────────────── 型別與常數 ─────────────── */
 
@@ -149,6 +150,7 @@ const SOCIAL_TEMPLATES: FlowTemplate[] = [
 export default function WorkflowBuilder({ config }: { config: WorkflowConfig }) {
   const showToast = useToast()
   const confirm   = useConfirm()
+  const supabase  = React.useMemo(() => createClient(), [])
   const isSocial  = config.variant === "social"
   const paletteKinds: NodeKind[]       = isSocial ? ["trigger", "social", "condition", "delay"] : ["trigger", "email", "line", "notify", "condition", "delay"]
   const allowedTriggers: TriggerType[] = isSocial ? ["social", "manual"] : ["payment", "order", "manual", "schedule", "line-bind"]
@@ -203,8 +205,8 @@ export default function WorkflowBuilder({ config }: { config: WorkflowConfig }) 
   const [msgTpls, setMsgTpls]       = useState<MsgTemplate[]>([])
   useEffect(() => {
     const l = loadStoredTemplates(); if (l.length) setStoredTpls(l)
-    setMsgTpls(loadMsgTemplates())
-  }, [])
+    fetchMsgTemplates(supabase).then(setMsgTpls)
+  }, [supabase])
   // 訊息管理（v2）的模板優先，舊簡易模板作為補充
   const emailTplNames = [...new Set([
     ...msgTpls.filter(t => t.emailOn).map(t => t.name),
@@ -222,32 +224,47 @@ export default function WorkflowBuilder({ config }: { config: WorkflowConfig }) 
   const [activeFlowId, setActiveFlowId] = useState<string>("")
   const initedRef = useRef(false)
 
+  const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const flowsRef = useRef<SavedWorkflow[]>([])
+
   useEffect(() => {
-    const loaded = loadWorkflows(config.storageKey)
-    if (loaded.length) {
-      setFlows(loaded); setActiveFlowId(loaded[0].id)
-      setNodes(loaded[0].nodes as FlowNode[]); setEdges(loaded[0].edges as Edge[])
-    } else {
-      const d = buildDefault()
-      const first: SavedWorkflow = { id: nid("wf"), name: "預設流程", nodes: d.nodes, edges: d.edges }
-      setFlows([first]); setActiveFlowId(first.id); setNodes(d.nodes); setEdges(d.edges)
-      saveWorkflows([first], config.storageKey)
-    }
-    initedRef.current = true
+    fetchWorkflowsDb(supabase, config.variant).then(loaded => {
+      if (loaded.length) {
+        setFlows(loaded); flowsRef.current = loaded
+        setActiveFlowId(loaded[0].id)
+        setNodes(loaded[0].nodes as FlowNode[]); setEdges(loaded[0].edges as Edge[])
+      } else {
+        const d = buildDefault()
+        const first: SavedWorkflow = { id: nid("wf"), name: "預設流程", enabled: true, nodes: d.nodes, edges: d.edges }
+        setFlows([first]); flowsRef.current = [first]
+        setActiveFlowId(first.id); setNodes(d.nodes); setEdges(d.edges)
+        upsertWorkflowsDb(supabase, config.variant, [first])
+      }
+      initedRef.current = true
+    })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // 節點/連線變動 → 更新本地並 debounce 寫入 DB（拖曳中不狂寫）
   useEffect(() => {
     if (!initedRef.current || !activeFlowId) return
-    setFlows(prev => { const next = prev.map(f => f.id === activeFlowId ? { ...f, nodes, edges } : f); saveWorkflows(next, config.storageKey); return next })
-  }, [nodes, edges, activeFlowId, config.storageKey])
+    setFlows(prev => {
+      const next = prev.map(f => f.id === activeFlowId ? { ...f, nodes, edges } : f)
+      flowsRef.current = next
+      return next
+    })
+    if (persistTimer.current) clearTimeout(persistTimer.current)
+    persistTimer.current = setTimeout(() => {
+      upsertWorkflowsDb(supabase, config.variant, flowsRef.current)
+    }, 800)
+  }, [nodes, edges, activeFlowId, config.variant, supabase])
 
   const clearSelection = () => { setSelectedId(null); setNodeDraft(null) }
   const switchFlow = (id: string) => { const f = flows.find(w => w.id === id); if (!f) return; setActiveFlowId(id); setNodes(f.nodes as FlowNode[]); setEdges(f.edges as Edge[]); clearSelection() }
   const addFlowFrom = (tpl: FlowTemplate) => {
     const d = tpl.build()
-    const f: SavedWorkflow = { id: nid("wf"), name: `${tpl.id.startsWith("blank") ? "新流程" : tpl.name} ${flows.length + 1}`, nodes: d.nodes, edges: d.edges }
-    setFlows(prev => { const next = [...prev, f]; saveWorkflows(next, config.storageKey); return next })
+    const f: SavedWorkflow = { id: nid("wf"), name: `${tpl.id.startsWith("blank") ? "新流程" : tpl.name} ${flows.length + 1}`, enabled: true, nodes: d.nodes, edges: d.edges }
+    setFlows(prev => { const next = [...prev, f]; flowsRef.current = next; upsertWorkflowsDb(supabase, config.variant, next); return next })
     setActiveFlowId(f.id); setNodes(d.nodes); setEdges(d.edges); clearSelection()
     setShowTemplates(false); showToast(`已從「${tpl.name}」建立工作流`, "success")
   }
@@ -256,12 +273,19 @@ export default function WorkflowBuilder({ config }: { config: WorkflowConfig }) 
     const f = flows.find(w => w.id === id)
     const ok = await confirm({ title: "刪除工作流", message: `確定要刪除工作流「${f?.name ?? ""}」？此動作無法復原。`, confirmText: "刪除", danger: true })
     if (!ok) return
-    const next = flows.filter(f => f.id !== id); setFlows(next); saveWorkflows(next, config.storageKey)
+    const next = flows.filter(f => f.id !== id); setFlows(next); flowsRef.current = next
+    deleteWorkflowDb(supabase, id)
     if (activeFlowId === id) { setActiveFlowId(next[0].id); setNodes(next[0].nodes as FlowNode[]); setEdges(next[0].edges as Edge[]) }
     showToast("已刪除工作流", "info")
   }
+  const schedulePersist = () => {
+    if (persistTimer.current) clearTimeout(persistTimer.current)
+    persistTimer.current = setTimeout(() => {
+      upsertWorkflowsDb(supabase, config.variant, flowsRef.current)
+    }, 800)
+  }
   const patchFlow = (patch: Partial<SavedWorkflow>) =>
-    setFlows(prev => { const next = prev.map(f => f.id === activeFlowId ? { ...f, ...patch } : f); saveWorkflows(next, config.storageKey); return next })
+    setFlows(prev => { const next = prev.map(f => f.id === activeFlowId ? { ...f, ...patch } : f); flowsRef.current = next; schedulePersist(); return next })
   const renameFlow = (name: string) => patchFlow({ name })
   const activeFlow = flows.find(f => f.id === activeFlowId)
 
