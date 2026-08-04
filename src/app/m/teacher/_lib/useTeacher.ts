@@ -8,7 +8,10 @@ export type TeacherMe = {
   name: string
   specialty: string
   email: string
+  phone: string
+  bio: string
   photoUrl: string | null
+  isLineAccount: boolean
 }
 
 /** 取得目前登入者的教師身分；非教師時導回教師登入頁 */

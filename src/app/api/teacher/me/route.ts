@@ -59,7 +59,10 @@ export async function GET() {
       name: teacher.name,
       specialty: teacher.specialty ?? "",
       email: teacher.email ?? user.email ?? "",
+      phone: teacher.phone ?? "",
+      bio: teacher.bio ?? "",
       photoUrl: teacher.photo_url ?? profile.avatar_url ?? null,
+      isLineAccount: (user.email ?? "").endsWith("@findtheway.app"),
     },
   })
 }
