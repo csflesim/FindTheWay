@@ -1,21 +1,38 @@
 'use client'
 
-import { use } from "react"
+import { use, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
-import { getStudent } from "../../_lib/students"
+import { createClient } from "@/lib/supabase/client"
+import { fetchMemberData, type MemberStudent, type MemberOrderLite } from "../../_lib/studentsDb"
 
-const enrollments = [
-  { id: 1, studentId: 1, course: "基礎水彩入門", date: "2026-06-21 10:00", status: "已報名" },
-  { id: 2, studentId: 3, course: "兒童創意素描", date: "2026-06-15 14:00", status: "已完成" },
-  { id: 3, studentId: 1, course: "基礎水彩入門", date: "2026-06-07 10:00", status: "已完成" },
-  { id: 4, studentId: 2, course: "親子藝術探索", date: "2026-05-25 14:00", status: "已完成" },
-  { id: 5, studentId: 2, course: "兒童創意素描", date: "2026-05-18 14:00", status: "已完成" },
-]
+function fmtDate(iso: string) {
+  const d = new Date(iso)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+}
 
 export default function StudentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
-  const student = getStudent(Number(id))
+  const supabase = useMemo(() => createClient(), [])
+  const [student, setStudent] = useState<MemberStudent | null>(null)
+  const [orders, setOrders] = useState<MemberOrderLite[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) { setLoading(false); return }
+      const { data: profile } = await supabase.from("profiles").select("name").eq("id", user.id).maybeSingle()
+      const { self, approved, orders } = await fetchMemberData(supabase, profile?.name ?? "本人")
+      const found = id === "self" ? self : approved.find(s => s.id === id) ?? null
+      setStudent(found)
+      setOrders(orders)
+      setLoading(false)
+    })
+  }, [supabase, id])
+
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center"><p className="text-[#ccc] text-sm">載入中…</p></div>
+  }
 
   if (!student) {
     return (
@@ -26,7 +43,10 @@ export default function StudentDetailPage({ params }: { params: Promise<{ id: st
     )
   }
 
-  const myEnrollments = enrollments.filter(e => e.studentId === student.id)
+  // 此學員的課程報名紀錄（本人 = 未指定學員的課程訂單）
+  const targetId = student.id === "self" ? null : student.id
+  const myEnrollments = orders.filter(o => o.course_id && o.student_id === targetId)
+  const completed = myEnrollments.filter(o => o.status === "已付款").length
 
   return (
     <div className="min-h-screen bg-[#fafaf9]">
@@ -46,7 +66,7 @@ export default function StudentDetailPage({ params }: { params: Promise<{ id: st
           </div>
           <div>
             <p className="text-lg font-medium">{student.name}</p>
-            <p className="text-xs text-[#aaa] mt-0.5">{student.age} 歲 · {student.relation}</p>
+            <p className="text-xs text-[#aaa] mt-0.5">{student.age != null ? `${student.age} 歲 · ` : ""}{student.relation}</p>
           </div>
         </div>
         <div className="mt-4 pt-4 border-t border-[#f5f5f5] flex gap-6">
@@ -55,8 +75,8 @@ export default function StudentDetailPage({ params }: { params: Promise<{ id: st
             <p className="text-[10px] text-[#aaa] mt-0.5">課堂券餘額</p>
           </div>
           <div>
-            <p className="text-2xl font-light">{myEnrollments.filter(e => e.status === "已完成").length}</p>
-            <p className="text-[10px] text-[#aaa] mt-0.5">已完成課程</p>
+            <p className="text-2xl font-light">{completed}</p>
+            <p className="text-[10px] text-[#aaa] mt-0.5">已報名課程</p>
           </div>
         </div>
       </div>
@@ -71,13 +91,13 @@ export default function StudentDetailPage({ params }: { params: Promise<{ id: st
             {myEnrollments.map(e => (
               <div key={e.id} className="flex items-center justify-between px-4 py-3.5">
                 <div>
-                  <p className="text-sm font-medium">{e.course}</p>
-                  <p className="text-xs text-[#aaa] mt-0.5">{e.date}</p>
+                  <p className="text-sm font-medium">{e.item_name}</p>
+                  <p className="text-xs text-[#aaa] mt-0.5">{fmtDate(e.created_at)} · {e.order_no}</p>
                 </div>
                 <span className={`text-[11px] px-2.5 py-1 rounded-full ${
-                  e.status === "已報名" ? "bg-black text-white" : "bg-[#f5f5f5] text-[#999]"
+                  e.status === "已付款" ? "bg-black text-white" : "bg-[#f5f5f5] text-[#999]"
                 }`}>
-                  {e.status}
+                  {e.status === "已付款" ? "已報名" : e.status}
                 </span>
               </div>
             ))}

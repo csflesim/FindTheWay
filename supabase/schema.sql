@@ -90,16 +90,20 @@ $$;
 -- 2. students — 學員（會員本人與家屬），含審核流程
 -- ────────────────────────────────────────────────────────────────────────────
 create table public.students (
-  id         uuid primary key default gen_random_uuid(),
-  owner_id   uuid not null references public.profiles(id) on delete cascade,
-  name       text not null,
-  age        int,
-  relation   text not null default '本人'
-             check (relation in ('本人', '子女', '配偶', '其他')),
-  status     text not null default '待審核'
-             check (status in ('待審核', '已核准', '已拒絕')),
-  note       text,
-  created_at timestamptz not null default now()
+  id          uuid primary key default gen_random_uuid(),
+  owner_id    uuid references public.profiles(id) on delete cascade,  -- 外部學員可無帳號
+  name        text not null,
+  age         int,
+  relation    text not null default '本人'
+              check (relation in ('本人', '子女', '配偶', '其他')),
+  status      text not null default '待審核'
+              check (status in ('待審核', '已核准', '已拒絕')),
+  types       text[] not null default '{內部}',   -- 內部 / 外部（可複選）
+  category    text,                               -- 外部：校外合作、試課…
+  unit_id     uuid references public.units(id) on delete set null,
+  class_group text,
+  note        text,
+  created_at  timestamptz not null default now()
 );
 create index students_owner_idx on public.students(owner_id);
 

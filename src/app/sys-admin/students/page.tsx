@@ -1,64 +1,49 @@
 'use client'
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Search, Plus, X, Trash2, BookOpen, Ticket, Check } from "lucide-react"
-
-const STUDENTS_KEY = "ftw.students.v1"
-
-type StudentRequest = {
-  id: string
-  name: string
-  age: number
-  relation: string
-  account: string
-  submittedAt: string
-  status: "待審核" | "已核准" | "已拒絕"
-}
+import { createClient } from "@/lib/supabase/client"
 
 type Relation = "本人" | "子女" | "配偶" | "其他"
-
-type Student = {
-  id: number
-  name: string
-  age: number
-  types: ("內部" | "外部")[]
-  // 內部
-  account?: string
-  relation?: Relation
-  tickets?: number
-  courses?: string[]
-  // 外部
-  category?: string
-  unit?: string
-  classGroup?: string
-  lastActive: string
-  notes?: string
-}
-
 const RELATIONS: Relation[] = ["本人", "子女", "配偶", "其他"]
 
-const INITIAL_STUDENTS: Student[] = [
-  { id: 1, name: "鄭小德", age: 10, types: ["內部"],         account: "鄭大德", relation: "子女", tickets: 7, courses: ["基礎水彩入門", "水墨入門體驗"], lastActive: "06/13" },
-  { id: 2, name: "鄭小明", age: 8,  types: ["內部"],         account: "鄭大德", relation: "子女", tickets: 3, courses: ["兒童創意素描"],                 lastActive: "06/12" },
-  { id: 3, name: "賴小柏", age: 9,  types: ["內部"],         account: "賴大紫", relation: "子女", tickets: 7, courses: ["親子藝術探索"],                 lastActive: "06/11" },
-  { id: 4, name: "賴小紫", age: 7,  types: ["內部"],         account: "賴大紫", relation: "子女", tickets: 1, courses: ["兒童創意素描"],                 lastActive: "06/10" },
-  { id: 5, name: "陳小安", age: 9,  types: ["外部"],         category: "校外合作", unit: "大安國小", classGroup: "二年甲班", lastActive: "06/09" },
-  { id: 6, name: "林小雅", age: 11, types: ["內部", "外部"], account: "賴大紫", relation: "其他", tickets: 2, courses: ["成人油畫工作坊"], category: "試課", unit: "—", classGroup: "—", lastActive: "06/08" },
-]
+type StudentRow = {
+  id: string
+  owner_id: string | null
+  name: string
+  age: number | null
+  relation: Relation
+  status: "待審核" | "已核准" | "已拒絕"
+  types: ("內部" | "外部")[]
+  category: string | null
+  unit_id: string | null
+  class_group: string | null
+  note: string | null
+  created_at: string
+  owner: { name: string } | null
+  unit: { name: string } | null
+}
 
-const ACCOUNTS = ["鄭大德", "賴大紫"]
+type Student = StudentRow & {
+  tickets: number
+  courses: string[]
+  lastActive: string
+}
 
-const UNITS = [
-  { name: "大安國小",    subUnits: [{ name: "美術班" }, { name: "一年甲班" }, { name: "二年甲班" }] },
-  { name: "社區發展協會", subUnits: [{ name: "長青班" }, { name: "親子班" }] },
-]
+type AccountRef = { id: string; name: string }
+type UnitRef = { id: string; name: string; subUnits: { name: string }[] }
+type TicketLite = { status: string; student_id: string | null; transferred_to: string | null }
+type OrderLite = { student_id: string | null; item_name: string; course_id: string | null; created_at: string }
+type AttendanceRow = { date: string; records: { name: string; status: string }[]; course: { title: string } | null }
 
-const ATTENDANCE = [
-  { date: "2026/06/13", course: "基礎水彩入門",  teacher: "明德老師", status: "出席" },
-  { date: "2026/06/06", course: "水墨入門體驗",  teacher: "明德老師", status: "出席" },
-  { date: "2026/05/30", course: "基礎水彩入門",  teacher: "明德老師", status: "請假" },
-  { date: "2026/05/23", course: "水墨入門體驗",  teacher: "明德老師", status: "出席" },
-]
+function fmtMMDD(iso: string) {
+  const d = new Date(iso)
+  return `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`
+}
+function fmtDateTime(iso: string) {
+  const d = new Date(iso)
+  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
+}
 
 function Drawer({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
@@ -88,54 +73,77 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 const inputCls = "w-full px-3 py-2.5 text-sm bg-[#fafaf9] border border-[#f0f0f0] rounded-xl outline-none focus:border-black focus:bg-white transition-colors"
 
+const EMPTY_FORM = {
+  name: "", age: "", types: ["內部"] as ("內部" | "外部")[],
+  ownerId: "", relation: "子女" as Relation,
+  category: "", unitId: "", classGroup: "", notes: "",
+}
+
 export default function StudentsPage() {
-  const [students, setStudents] = useState<Student[]>(INITIAL_STUDENTS)
+  const supabase = useMemo(() => createClient(), [])
+  const [students, setStudents] = useState<Student[]>([])
+  const [accounts, setAccounts] = useState<AccountRef[]>([])
+  const [units, setUnits]       = useState<UnitRef[]>([])
+  const [attendance, setAttendance] = useState<AttendanceRow[]>([])
+  const [loading, setLoading]   = useState(true)
+  const [saving, setSaving]     = useState(false)
+  const [query, setQuery]       = useState("")
   const [drawer, setDrawer]     = useState<"add" | "view" | null>(null)
   const [selected, setSelected] = useState<Student | null>(null)
-  const [nextId, setNextId]     = useState(10)
-  const [form, setForm]         = useState({ name: "", age: "", types: ["內部"] as ("內部"|"外部")[], account: ACCOUNTS[0], relation: "子女" as Relation, category: "", unit: "", classGroup: "", notes: "" })
-  const [requests, setRequests] = useState<StudentRequest[]>([])
+  const [form, setForm]         = useState(EMPTY_FORM)
 
   useEffect(() => {
-    try {
-      const s = localStorage.getItem(STUDENTS_KEY)
-      if (s) setRequests(JSON.parse(s))
-    } catch {}
-  }, [])
+    Promise.all([
+      supabase.from("students").select("*, owner:profiles!owner_id(name), unit:units!unit_id(name)").order("created_at"),
+      supabase.from("tickets").select("status, student_id, transferred_to"),
+      supabase.from("orders").select("student_id, item_name, course_id, created_at").order("created_at", { ascending: false }),
+      supabase.from("profiles").select("id, name").order("name"),
+      supabase.from("units").select("id, name, sub_units").order("created_at"),
+      supabase.from("course_attendance").select("date, records, course:courses(title)").order("date", { ascending: false }),
+    ]).then(([sRes, tRes, oRes, pRes, uRes, aRes]) => {
+      if (sRes.error) console.error("載入學員失敗:", sRes.error.message)
+      const tickets = (tRes.data ?? []) as TicketLite[]
+      const orders  = (oRes.data ?? []) as OrderLite[]
+      const rows    = (sRes.data ?? []) as unknown as StudentRow[]
 
-  function updateRequest(id: string, status: "已核准" | "已拒絕") {
-    setRequests(prev => {
-      const next = prev.map(r => r.id === id ? { ...r, status } : r)
-      try { localStorage.setItem(STUDENTS_KEY, JSON.stringify(next)) } catch {}
-      if (status === "已核准") {
-        const req = prev.find(r => r.id === id)
-        if (req) {
-          const s: Student = {
-            id: nextId,
-            name: req.name,
-            age: req.age,
-            types: ["內部"],
-            account: req.account,
-            relation: req.relation as Relation,
-            tickets: 0,
-            courses: [],
-            lastActive: "—",
-          }
-          setStudents(p => [...p, s])
-          setNextId(n => n + 1)
+      setStudents(rows.map(r => {
+        const unused = tickets.filter(t =>
+          t.status === "未使用" && ((t.transferred_to ?? t.student_id) === r.id)
+        ).length
+        const myOrders = orders.filter(o => o.student_id === r.id)
+        const courses = [...new Set(myOrders.filter(o => o.course_id).map(o => o.item_name))]
+        return {
+          ...r,
+          types: Array.isArray(r.types) && r.types.length ? r.types : ["內部"],
+          tickets: unused,
+          courses,
+          lastActive: myOrders.length ? fmtMMDD(myOrders[0].created_at) : "—",
         }
-      }
-      return next
+      }))
+      setAccounts((pRes.data ?? []) as AccountRef[])
+      setUnits(((uRes.data ?? []) as { id: string; name: string; sub_units: { name: string }[] }[])
+        .map(u => ({ id: u.id, name: u.name, subUnits: Array.isArray(u.sub_units) ? u.sub_units : [] })))
+      setAttendance((aRes.data ?? []) as unknown as AttendanceRow[])
+      setLoading(false)
     })
+  }, [supabase])
+
+  const matched = students.filter(s =>
+    !query.trim() || s.name.includes(query.trim()) || (s.owner?.name ?? "").includes(query.trim())
+  )
+  const pending  = matched.filter(s => s.status === "待審核")
+  const approved = matched.filter(s => s.status === "已核准")
+  const internal = approved.filter(s => s.types.includes("內部"))
+  const external = approved.filter(s => s.types.includes("外部"))
+
+  async function updateRequest(id: string, status: "已核准" | "已拒絕") {
+    const { error } = await supabase.from("students").update({ status }).eq("id", id)
+    if (error) { alert(`操作失敗：${error.message}`); return }
+    setStudents(prev => prev.map(s => s.id === id ? { ...s, status } : s))
   }
 
-  const pending = requests.filter(r => r.status === "待審核")
-
-  const internal = students.filter(s => s.types.includes("內部"))
-  const external = students.filter(s => s.types.includes("外部"))
-
   function openAdd() {
-    setForm({ name: "", age: "", types: ["內部"], account: ACCOUNTS[0], relation: "子女", category: "", unit: "", classGroup: "", notes: "" })
+    setForm(EMPTY_FORM)
     setDrawer("add")
   }
 
@@ -154,26 +162,45 @@ export default function StudentsPage() {
 
   function close() { setDrawer(null); setSelected(null) }
 
-  function saveAdd() {
-    if (!form.name.trim()) return
-    const s: Student = {
-      id: nextId,
+  async function saveAdd() {
+    if (!form.name.trim() || saving) return
+    const isInternal = form.types.includes("內部")
+    if (isInternal && !form.ownerId) { alert("內部學員請選擇所屬帳號"); return }
+    setSaving(true)
+    const { data, error } = await supabase.from("students").insert({
+      owner_id: isInternal ? form.ownerId : null,
       name: form.name.trim(),
-      age: parseInt(form.age) || 0,
+      age: parseInt(form.age) || null,
+      relation: isInternal ? form.relation : "其他",
+      status: "已核准",
       types: form.types,
-      ...(form.types.includes("內部") ? { account: form.account, relation: form.relation, tickets: 0, courses: [] } : {}),
-      ...(form.types.includes("外部") ? { category: form.category, unit: form.unit, classGroup: form.classGroup } : {}),
-      lastActive: "—",
-      notes: form.notes,
-    }
-    setStudents(prev => [...prev, s])
-    setNextId(n => n + 1)
+      category: form.types.includes("外部") ? (form.category || null) : null,
+      unit_id: form.types.includes("外部") && form.unitId ? form.unitId : null,
+      class_group: form.types.includes("外部") ? (form.classGroup || null) : null,
+      note: form.notes || null,
+    }).select("*, owner:profiles!owner_id(name), unit:units!unit_id(name)").single()
+    setSaving(false)
+    if (error) { alert(`新增失敗：${error.message}`); return }
+    const r = data as unknown as StudentRow
+    setStudents(prev => [...prev, { ...r, types: r.types?.length ? r.types : ["內部"], tickets: 0, courses: [], lastActive: "—" }])
     close()
   }
 
-  function deleteStudent(id: number) {
+  async function deleteStudent(id: string) {
+    if (!confirm("確定刪除此學員？")) return
+    const { error } = await supabase.from("students").delete().eq("id", id)
+    if (error) { alert(`刪除失敗：${error.message}`); return }
     setStudents(prev => prev.filter(s => s.id !== id))
     close()
+  }
+
+  // 學員的出席紀錄（依姓名比對點名名單）
+  function attendanceOf(name: string) {
+    return attendance
+      .flatMap(a => (a.records ?? [])
+        .filter(r => r.name === name)
+        .map(r => ({ date: a.date, course: a.course?.title ?? "—", status: r.status })))
+      .slice(0, 10)
   }
 
   return (
@@ -193,7 +220,7 @@ export default function StudentsPage() {
 
       <div className="relative mb-5">
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#bbb]" />
-        <input placeholder="搜尋學員姓名 / 帳號…"
+        <input placeholder="搜尋學員姓名 / 帳號…" value={query} onChange={e => setQuery(e.target.value)}
           className="w-full pl-9 pr-4 py-2.5 text-sm bg-white border border-[#f0f0f0] rounded-xl outline-none focus:border-black" />
       </div>
 
@@ -215,10 +242,10 @@ export default function StudentsPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="text-sm font-medium">{r.name}</p>
-                      <span className="text-[10px] bg-[#f5f5f5] text-[#666] px-1.5 py-0.5 rounded-full">{r.age}歲</span>
+                      {r.age != null && <span className="text-[10px] bg-[#f5f5f5] text-[#666] px-1.5 py-0.5 rounded-full">{r.age}歲</span>}
                       <span className="text-[10px] bg-[#f5f5f5] text-[#666] px-1.5 py-0.5 rounded-full">{r.relation}</span>
                     </div>
-                    <p className="text-xs text-[#aaa] mt-0.5">{r.account} · {r.submittedAt}</p>
+                    <p className="text-xs text-[#aaa] mt-0.5">{r.owner?.name ?? "—"} · {fmtDateTime(r.created_at)}</p>
                   </div>
                   <div className="flex gap-2 shrink-0">
                     <button
@@ -251,7 +278,8 @@ export default function StudentsPage() {
               <span>學生</span><span>年齡</span><span>帳號</span><span>關係</span><span>課堂券</span><span>報名課程</span><span>最後動態</span><span></span>
             </div>
             <div className="divide-y divide-[#f9f9f9]">
-              {internal.length === 0 && <p className="px-5 py-4 text-sm text-[#ccc]">尚無內部學員</p>}
+              {loading && <p className="px-5 py-4 text-sm text-[#ccc]">載入中…</p>}
+              {!loading && internal.length === 0 && <p className="px-5 py-4 text-sm text-[#ccc]">尚無內部學員</p>}
               {internal.map((s) => (
                 <div key={s.id} className="grid grid-cols-[1.5fr_0.5fr_1.5fr_0.6fr_0.7fr_2fr_0.7fr_auto] gap-4 items-center px-5 py-4">
                   <div className="flex items-center gap-2.5">
@@ -261,12 +289,12 @@ export default function StudentsPage() {
                       {s.types.includes("外部") && <span className="text-[10px] bg-[#e8f4fd] text-[#1a6fa8] px-1.5 py-0.5 rounded-full shrink-0">外部</span>}
                     </div>
                   </div>
-                  <p className="text-sm text-[#999]">{s.age}歲</p>
-                  <p className="text-xs text-[#666] truncate">{s.account}</p>
-                  <p className="text-xs text-[#999]">{s.relation ?? "—"}</p>
-                  <p className={`text-sm font-medium ${(s.tickets ?? 0) === 0 ? "text-red-400" : ""}`}>{s.tickets} 堂</p>
+                  <p className="text-sm text-[#999]">{s.age != null ? `${s.age}歲` : "—"}</p>
+                  <p className="text-xs text-[#666] truncate">{s.owner?.name ?? "—"}</p>
+                  <p className="text-xs text-[#999]">{s.relation}</p>
+                  <p className={`text-sm font-medium ${s.tickets === 0 ? "text-red-400" : ""}`}>{s.tickets} 堂</p>
                   <div className="flex flex-wrap gap-1">
-                    {(s.courses ?? []).map((c) => (
+                    {s.courses.map((c) => (
                       <span key={c} className="text-[10px] bg-[#f5f5f5] text-[#666] px-1.5 py-0.5 rounded truncate max-w-[120px]">{c}</span>
                     ))}
                   </div>
@@ -277,7 +305,7 @@ export default function StudentsPage() {
             </div>
           </div>
           <div className="md:hidden divide-y divide-[#f9f9f9]">
-            {internal.length === 0 && <p className="px-5 py-4 text-sm text-[#ccc]">尚無內部學員</p>}
+            {!loading && internal.length === 0 && <p className="px-5 py-4 text-sm text-[#ccc]">尚無內部學員</p>}
             {internal.map((s) => (
               <div key={s.id} className="p-4">
                 <div className="flex items-center justify-between mb-2">
@@ -285,13 +313,13 @@ export default function StudentsPage() {
                     <div className="w-8 h-8 bg-[#f2f2f2] rounded-full shrink-0 flex items-center justify-center text-sm text-[#999] font-medium">{s.name.slice(0, 1)}</div>
                     <div>
                       <p className="text-sm font-medium">{s.name}</p>
-                      <p className="text-xs text-[#999]">{s.age}歲 · {s.account}{s.relation ? ` · ${s.relation}` : ""}</p>
+                      <p className="text-xs text-[#999]">{s.age != null ? `${s.age}歲 · ` : ""}{s.owner?.name ?? "—"} · {s.relation}</p>
                     </div>
                   </div>
-                  <p className={`text-sm font-medium ${(s.tickets ?? 0) === 0 ? "text-red-400" : ""}`}>{s.tickets} 堂</p>
+                  <p className={`text-sm font-medium ${s.tickets === 0 ? "text-red-400" : ""}`}>{s.tickets} 堂</p>
                 </div>
                 <div className="flex flex-wrap gap-1 mt-2">
-                  {(s.courses ?? []).map((c) => (
+                  {s.courses.map((c) => (
                     <span key={c} className="text-[10px] bg-[#f5f5f5] text-[#666] px-1.5 py-0.5 rounded">{c}</span>
                   ))}
                 </div>
@@ -315,7 +343,7 @@ export default function StudentsPage() {
               <span>學生</span><span>年齡</span><span>類別</span><span>所屬單位</span><span>所屬班級</span><span>最後動態</span><span></span>
             </div>
             <div className="divide-y divide-[#f9f9f9]">
-              {external.length === 0 && <p className="px-5 py-4 text-sm text-[#ccc]">尚無外部學員</p>}
+              {!loading && external.length === 0 && <p className="px-5 py-4 text-sm text-[#ccc]">尚無外部學員</p>}
               {external.map((s) => (
                 <div key={s.id} className="grid grid-cols-[1.5fr_0.5fr_1fr_1.5fr_1.5fr_0.8fr_auto] gap-4 items-center px-5 py-4">
                   <div className="flex items-center gap-2.5">
@@ -325,10 +353,10 @@ export default function StudentsPage() {
                       {s.types.includes("內部") && <span className="text-[10px] bg-[#f0f0f0] text-[#555] px-1.5 py-0.5 rounded-full shrink-0">內部</span>}
                     </div>
                   </div>
-                  <p className="text-sm text-[#999]">{s.age}歲</p>
+                  <p className="text-sm text-[#999]">{s.age != null ? `${s.age}歲` : "—"}</p>
                   <span className="text-[11px] bg-[#e8f4fd] text-[#1a6fa8] px-2 py-0.5 rounded-full w-fit">{s.category ?? "—"}</span>
-                  <p className="text-xs text-[#666] truncate">{s.unit ?? "—"}</p>
-                  <p className="text-xs text-[#666] truncate">{s.classGroup ?? "—"}</p>
+                  <p className="text-xs text-[#666] truncate">{s.unit?.name ?? "—"}</p>
+                  <p className="text-xs text-[#666] truncate">{s.class_group ?? "—"}</p>
                   <p className="text-xs text-[#999]">{s.lastActive}</p>
                   <button onClick={() => openView(s)} className="text-xs text-[#999] hover:text-black">查看</button>
                 </div>
@@ -336,7 +364,7 @@ export default function StudentsPage() {
             </div>
           </div>
           <div className="md:hidden divide-y divide-[#f9f9f9]">
-            {external.length === 0 && <p className="px-5 py-4 text-sm text-[#ccc]">尚無外部學員</p>}
+            {!loading && external.length === 0 && <p className="px-5 py-4 text-sm text-[#ccc]">尚無外部學員</p>}
             {external.map((s) => (
               <div key={s.id} className="p-4">
                 <div className="flex items-center justify-between mb-2">
@@ -344,7 +372,7 @@ export default function StudentsPage() {
                     <div className="w-8 h-8 bg-[#f2f2f2] rounded-full shrink-0 flex items-center justify-center text-sm text-[#999] font-medium">{s.name.slice(0, 1)}</div>
                     <div>
                       <p className="text-sm font-medium">{s.name}</p>
-                      <p className="text-xs text-[#999]">{s.age}歲</p>
+                      <p className="text-xs text-[#999]">{s.age != null ? `${s.age}歲` : "—"}</p>
                     </div>
                   </div>
                   <span className="text-[11px] bg-[#e8f4fd] text-[#1a6fa8] px-2 py-0.5 rounded-full">{s.category ?? "—"}</span>
@@ -352,11 +380,11 @@ export default function StudentsPage() {
                 <div className="flex gap-4 mt-2">
                   <div>
                     <p className="text-[10px] text-[#bbb]">所屬單位</p>
-                    <p className="text-xs text-[#666] mt-0.5">{s.unit ?? "—"}</p>
+                    <p className="text-xs text-[#666] mt-0.5">{s.unit?.name ?? "—"}</p>
                   </div>
                   <div>
                     <p className="text-[10px] text-[#bbb]">所屬班級</p>
-                    <p className="text-xs text-[#666] mt-0.5">{s.classGroup ?? "—"}</p>
+                    <p className="text-xs text-[#666] mt-0.5">{s.class_group ?? "—"}</p>
                   </div>
                 </div>
                 <div className="flex items-center justify-between mt-3">
@@ -406,9 +434,10 @@ export default function StudentsPage() {
               {form.types.includes("內部") && (
                 <>
                   <Field label="所屬帳號">
-                    <select value={form.account} onChange={e => setForm(f => ({ ...f, account: e.target.value }))}
+                    <select value={form.ownerId} onChange={e => setForm(f => ({ ...f, ownerId: e.target.value }))}
                       className={inputCls}>
-                      {ACCOUNTS.map(a => <option key={a}>{a}</option>)}
+                      <option value="">選擇帳號…</option>
+                      {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                     </select>
                   </Field>
                   <Field label="與帳號者關係">
@@ -433,15 +462,15 @@ export default function StudentsPage() {
                       placeholder="校外合作、試課…" className={inputCls} />
                   </Field>
                   <Field label="所屬單位">
-                    <select value={form.unit}
-                      onChange={e => setForm(f => ({ ...f, unit: e.target.value, classGroup: "" }))}
+                    <select value={form.unitId}
+                      onChange={e => setForm(f => ({ ...f, unitId: e.target.value, classGroup: "" }))}
                       className={inputCls}>
                       <option value="">請選擇單位…</option>
-                      {UNITS.map(u => <option key={u.name} value={u.name}>{u.name}</option>)}
+                      {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                     </select>
                   </Field>
-                  {form.unit && (() => {
-                    const unit = UNITS.find(u => u.name === form.unit)
+                  {form.unitId && (() => {
+                    const unit = units.find(u => u.id === form.unitId)
                     if (!unit || unit.subUnits.length === 0) return null
                     return (
                       <Field label="所屬班級">
@@ -469,8 +498,9 @@ export default function StudentsPage() {
             <button onClick={close} className="px-4 py-2 text-sm border border-[#f0f0f0] rounded-xl hover:border-black transition-colors">
               取消
             </button>
-            <button onClick={saveAdd} className="px-5 py-2 text-sm bg-black text-white rounded-xl hover:bg-[#222] transition-colors">
-              建立學員
+            <button onClick={saveAdd} disabled={saving}
+              className="px-5 py-2 text-sm bg-black text-white rounded-xl hover:bg-[#222] disabled:opacity-50 transition-colors">
+              {saving ? "儲存中…" : "建立學員"}
             </button>
           </div>
         </Drawer>
@@ -495,7 +525,7 @@ export default function StudentsPage() {
                     }`}>{t}</span>
                   ))}
                 </div>
-                <p className="text-sm text-[#999] mt-0.5">{selected.age} 歲</p>
+                <p className="text-sm text-[#999] mt-0.5">{selected.age != null ? `${selected.age} 歲` : "—"}</p>
               </div>
             </div>
 
@@ -505,19 +535,19 @@ export default function StudentsPage() {
                 <div>
                   <p className="text-[11px] text-[#aaa] uppercase tracking-widest mb-3">內部學員</p>
                   <div className="grid grid-cols-2 gap-3">
-                    <div className={`rounded-xl p-4 ${(selected.tickets ?? 0) === 0 ? "bg-red-50 border border-red-100" : "bg-[#fafaf9] border border-[#f0f0f0]"}`}>
+                    <div className={`rounded-xl p-4 ${selected.tickets === 0 ? "bg-red-50 border border-red-100" : "bg-[#fafaf9] border border-[#f0f0f0]"}`}>
                       <div className="flex items-center gap-1.5 mb-1">
-                        <Ticket size={13} className={(selected.tickets ?? 0) === 0 ? "text-red-400" : "text-[#aaa]"} />
+                        <Ticket size={13} className={selected.tickets === 0 ? "text-red-400" : "text-[#aaa]"} />
                         <p className="text-[11px] text-[#aaa]">課堂券餘額</p>
                       </div>
-                      <p className={`text-2xl font-light ${(selected.tickets ?? 0) === 0 ? "text-red-400" : ""}`}>{selected.tickets ?? 0} <span className="text-sm">堂</span></p>
+                      <p className={`text-2xl font-light ${selected.tickets === 0 ? "text-red-400" : ""}`}>{selected.tickets} <span className="text-sm">堂</span></p>
                     </div>
                     <div className="bg-[#fafaf9] border border-[#f0f0f0] rounded-xl p-4">
                       <div className="flex items-center gap-1.5 mb-1">
                         <BookOpen size={13} className="text-[#aaa]" />
                         <p className="text-[11px] text-[#aaa]">報名課程</p>
                       </div>
-                      <p className="text-2xl font-light">{(selected.courses ?? []).length} <span className="text-sm">堂</span></p>
+                      <p className="text-2xl font-light">{selected.courses.length} <span className="text-sm">堂</span></p>
                     </div>
                   </div>
                 </div>
@@ -525,21 +555,21 @@ export default function StudentsPage() {
                 <div className="flex gap-3">
                   <div className="flex-1 bg-[#fafaf9] border border-[#f0f0f0] rounded-xl px-4 py-3 flex items-center justify-between">
                     <p className="text-[11px] text-[#aaa]">所屬帳號</p>
-                    <p className="text-sm font-medium">{selected.account ?? "—"}</p>
+                    <p className="text-sm font-medium">{selected.owner?.name ?? "—"}</p>
                   </div>
                   <div className="flex-1 bg-[#fafaf9] border border-[#f0f0f0] rounded-xl px-4 py-3 flex items-center justify-between">
                     <p className="text-[11px] text-[#aaa]">與帳號者關係</p>
-                    <p className="text-sm font-medium">{selected.relation ?? "—"}</p>
+                    <p className="text-sm font-medium">{selected.relation}</p>
                   </div>
                 </div>
 
                 <div>
                   <p className="text-[11px] text-[#aaa] uppercase tracking-widest mb-2.5">報名中課程</p>
-                  {(selected.courses ?? []).length === 0 ? (
+                  {selected.courses.length === 0 ? (
                     <p className="text-sm text-[#ccc]">尚未報名任何課程</p>
                   ) : (
                     <div className="flex flex-col gap-2">
-                      {(selected.courses ?? []).map(c => (
+                      {selected.courses.map(c => (
                         <div key={c} className="bg-[#fafaf9] border border-[#f0f0f0] rounded-xl px-4 py-3">
                           <p className="text-sm">{c}</p>
                         </div>
@@ -547,29 +577,30 @@ export default function StudentsPage() {
                     </div>
                   )}
                 </div>
-
-                <div>
-                  <p className="text-[11px] text-[#aaa] uppercase tracking-widest mb-2.5">出席紀錄</p>
-                  {(selected.id === 1 ? ATTENDANCE : []).length === 0 ? (
-                    <p className="text-sm text-[#ccc]">尚無出席紀錄</p>
-                  ) : (
-                    <div className="flex flex-col">
-                      {(selected.id === 1 ? ATTENDANCE : []).map((r, i) => (
-                        <div key={i} className="flex items-center justify-between py-2.5 border-b border-[#f5f5f5] last:border-0">
-                          <div>
-                            <p className="text-sm">{r.course}</p>
-                            <p className="text-xs text-[#aaa] mt-0.5">{r.date} · {r.teacher}</p>
-                          </div>
-                          <span className={`text-[11px] px-2.5 py-1 rounded-full ${
-                            r.status === "出席" ? "bg-black text-white" : "bg-[#f5f5f5] text-[#999]"
-                          }`}>{r.status}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
               </>
             )}
+
+            {/* 出席紀錄 */}
+            <div>
+              <p className="text-[11px] text-[#aaa] uppercase tracking-widest mb-2.5">出席紀錄</p>
+              {attendanceOf(selected.name).length === 0 ? (
+                <p className="text-sm text-[#ccc]">尚無出席紀錄</p>
+              ) : (
+                <div className="flex flex-col">
+                  {attendanceOf(selected.name).map((r, i) => (
+                    <div key={i} className="flex items-center justify-between py-2.5 border-b border-[#f5f5f5] last:border-0">
+                      <div>
+                        <p className="text-sm">{r.course}</p>
+                        <p className="text-xs text-[#aaa] mt-0.5">{r.date}</p>
+                      </div>
+                      <span className={`text-[11px] px-2.5 py-1 rounded-full ${
+                        r.status === "出席" ? "bg-black text-white" : "bg-[#f5f5f5] text-[#999]"
+                      }`}>{r.status}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* divider between sections */}
             {selected.types.length === 2 && <div className="border-t border-[#f0f0f0]" />}
@@ -581,8 +612,8 @@ export default function StudentsPage() {
                 <div className="flex flex-col gap-2">
                   {[
                     { label: "類別",     value: selected.category },
-                    { label: "所屬單位", value: selected.unit },
-                    { label: "所屬班級", value: selected.classGroup },
+                    { label: "所屬單位", value: selected.unit?.name },
+                    { label: "所屬班級", value: selected.class_group },
                   ].map(({ label, value }) => (
                     <div key={label} className="bg-[#fafaf9] border border-[#f0f0f0] rounded-xl px-4 py-3 flex items-center justify-between">
                       <p className="text-[11px] text-[#aaa]">{label}</p>

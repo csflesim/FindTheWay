@@ -1,52 +1,38 @@
 'use client'
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import Link from "next/link"
 import { ArrowLeft, Check } from "lucide-react"
+import { createClient } from "@/lib/supabase/client"
 
 const RELATIONS = ["子女", "配偶", "其他"]
-const STUDENTS_KEY = "ftw.students.v1"
 
 const inputCls = "w-full px-4 py-3 text-sm bg-white border border-[#f0f0f0] rounded-xl outline-none focus:border-black transition-colors"
 
-function todayStr() {
-  const d = new Date()
-  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
-}
-
-function getNextReqId(): string {
-  try {
-    const s = localStorage.getItem(STUDENTS_KEY)
-    const list = s ? JSON.parse(s) : []
-    return `REQ-${String(list.length + 1).padStart(3, "0")}`
-  } catch {}
-  return "REQ-001"
-}
-
 export default function AddStudentPage() {
+  const supabase = useMemo(() => createClient(), [])
   const [name, setName]         = useState("")
   const [age, setAge]           = useState("")
   const [relation, setRelation] = useState("子女")
+  const [submitting, setSubmitting] = useState(false)
   const [done, setDone]         = useState(false)
 
   const canSubmit = name.trim() && age.trim()
 
-  function handleSubmit() {
-    if (!canSubmit) return
-    try {
-      const req = {
-        id: getNextReqId(),
-        name: name.trim(),
-        age: parseInt(age) || 0,
-        relation,
-        account: "賴大紫",
-        submittedAt: todayStr(),
-        status: "待審核",
-      }
-      const s = localStorage.getItem(STUDENTS_KEY)
-      const list = s ? JSON.parse(s) : []
-      localStorage.setItem(STUDENTS_KEY, JSON.stringify([...list, req]))
-    } catch {}
+  async function handleSubmit() {
+    if (!canSubmit || submitting) return
+    setSubmitting(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setSubmitting(false); alert("請先登入"); return }
+    const { error } = await supabase.from("students").insert({
+      owner_id: user.id,
+      name: name.trim(),
+      age: parseInt(age) || null,
+      relation,
+      status: "待審核",
+    })
+    setSubmitting(false)
+    if (error) { alert(`送出失敗：${error.message}`); return }
     setDone(true)
   }
 
@@ -125,10 +111,10 @@ export default function AddStudentPage() {
 
         <button
           onClick={handleSubmit}
-          disabled={!canSubmit}
+          disabled={!canSubmit || submitting}
           className="mt-2 w-full py-3 bg-black text-white text-sm rounded-xl disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#222] transition-colors"
         >
-          送出申請
+          {submitting ? "送出中…" : "送出申請"}
         </button>
       </div>
     </div>

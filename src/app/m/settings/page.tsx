@@ -1,10 +1,12 @@
 'use client'
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { ArrowLeft, ChevronRight, Eye, EyeOff } from "lucide-react"
+import { createClient } from "@/lib/supabase/client"
 
 const inputCls = "w-full px-4 py-3 text-sm bg-white border border-[#f0f0f0] rounded-xl outline-none focus:border-black transition-colors"
+const NOTIFY_KEY = "ftw.notify.v1"
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -47,17 +49,80 @@ function Toggle({ label, value, onChange }: { label: string; value: boolean; onC
 }
 
 export default function SettingsPage() {
-  const [name, setName] = useState("賴大紫")
-  const [email] = useState("purple@findtheway.com")
+  const supabase = useMemo(() => createClient(), [])
+  const [name, setName] = useState("")
+  const [nameDraft, setNameDraft] = useState("")
+  const [email, setEmail] = useState("")
+  const [isLineAccount, setIsLineAccount] = useState(false)
+  const [lineBound, setLineBound] = useState(false)
   const [editingName, setEditingName] = useState(false)
   const [editingPwd, setEditingPwd] = useState(false)
   const [oldPwd, setOldPwd] = useState("")
   const [newPwd, setNewPwd] = useState("")
   const [showOld, setShowOld] = useState(false)
   const [showNew, setShowNew] = useState(false)
+  const [busy, setBusy] = useState(false)
   const [notifyCourse, setNotifyCourse] = useState(true)
   const [notifyOrder, setNotifyOrder] = useState(true)
   const [logoutConfirm, setLogoutConfirm] = useState(false)
+
+  useEffect(() => {
+    try {
+      const s = localStorage.getItem(NOTIFY_KEY)
+      if (s) {
+        const p = JSON.parse(s)
+        if (typeof p.course === "boolean") setNotifyCourse(p.course)
+        if (typeof p.order === "boolean") setNotifyOrder(p.order)
+      }
+    } catch {}
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) return
+      setEmail(user.email ?? "")
+      setIsLineAccount((user.email ?? "").endsWith("@findtheway.app"))
+      const { data: profile } = await supabase.from("profiles")
+        .select("name, line_user_id").eq("id", user.id).maybeSingle()
+      if (profile) {
+        setName(profile.name || "")
+        setNameDraft(profile.name || "")
+        setLineBound(!!profile.line_user_id)
+      }
+    })
+  }, [supabase])
+
+  function saveNotify(course: boolean, order: boolean) {
+    try { localStorage.setItem(NOTIFY_KEY, JSON.stringify({ course, order })) } catch {}
+  }
+
+  async function saveName() {
+    if (busy) return
+    setBusy(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setBusy(false); return }
+    const { error } = await supabase.from("profiles")
+      .update({ name: nameDraft.trim() }).eq("id", user.id)
+    setBusy(false)
+    if (error) { alert(`儲存失敗：${error.message}`); return }
+    setName(nameDraft.trim())
+    setEditingName(false)
+  }
+
+  async function savePassword() {
+    if (busy) return
+    setBusy(true)
+    // 先用舊密碼驗證身分，再更新
+    const { error: verifyErr } = await supabase.auth.signInWithPassword({ email, password: oldPwd })
+    if (verifyErr) { setBusy(false); alert("舊密碼錯誤"); return }
+    const { error } = await supabase.auth.updateUser({ password: newPwd })
+    setBusy(false)
+    if (error) { alert(`更新失敗：${error.message}`); return }
+    alert("密碼已更新")
+    setEditingPwd(false); setOldPwd(""); setNewPwd("")
+  }
+
+  async function handleLogout() {
+    await supabase.auth.signOut()
+    window.location.href = "/m/login"
+  }
 
   return (
     <div className="min-h-screen bg-[#fafaf9]">
@@ -76,38 +141,44 @@ export default function SettingsPage() {
             <div className="px-4 py-3.5 flex flex-col gap-2">
               <label className="text-xs text-[#aaa]">顯示名稱</label>
               <input
-                value={name}
-                onChange={e => setName(e.target.value)}
+                value={nameDraft}
+                onChange={e => setNameDraft(e.target.value)}
                 className={inputCls}
                 autoFocus
               />
               <div className="flex gap-2 mt-1">
                 <button
-                  onClick={() => setEditingName(false)}
+                  onClick={() => { setEditingName(false); setNameDraft(name) }}
                   className="flex-1 py-2 text-sm border border-[#f0f0f0] rounded-xl"
                 >
                   取消
                 </button>
                 <button
-                  onClick={() => setEditingName(false)}
-                  className="flex-1 py-2 text-sm bg-black text-white rounded-xl"
+                  onClick={saveName}
+                  disabled={busy || !nameDraft.trim()}
+                  className="flex-1 py-2 text-sm bg-black text-white rounded-xl disabled:opacity-40"
                 >
-                  儲存
+                  {busy ? "儲存中…" : "儲存"}
                 </button>
               </div>
             </div>
           ) : (
-            <Row label="顯示名稱" value={name} onClick={() => setEditingName(true)} />
+            <Row label="顯示名稱" value={name || "—"} onClick={() => setEditingName(true)} />
           )}
           <div className="flex items-center justify-between px-4 py-3.5">
             <span className="text-sm">電子信箱</span>
-            <span className="text-sm text-[#aaa]">{email}</span>
+            <span className="text-sm text-[#aaa]">{isLineAccount ? "（LINE 帳號）" : email || "—"}</span>
           </div>
         </Section>
 
         {/* Password */}
         <Section title="安全性">
-          {editingPwd ? (
+          {isLineAccount ? (
+            <div className="px-4 py-3.5">
+              <p className="text-sm">密碼</p>
+              <p className="text-xs text-[#aaa] mt-0.5">此帳號透過 LINE 登入，無需密碼</p>
+            </div>
+          ) : editingPwd ? (
             <div className="px-4 py-3.5 flex flex-col gap-2">
               <label className="text-xs text-[#aaa]">舊密碼</label>
               <div className="relative">
@@ -149,11 +220,11 @@ export default function SettingsPage() {
                   取消
                 </button>
                 <button
-                  disabled={!oldPwd || newPwd.length < 8}
-                  onClick={() => { setEditingPwd(false); setOldPwd(""); setNewPwd("") }}
+                  disabled={busy || !oldPwd || newPwd.length < 8}
+                  onClick={savePassword}
                   className="flex-1 py-2 text-sm bg-black text-white rounded-xl disabled:opacity-40"
                 >
-                  更新密碼
+                  {busy ? "更新中…" : "更新密碼"}
                 </button>
               </div>
             </div>
@@ -163,16 +234,19 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between px-4 py-3.5">
             <div>
               <p className="text-sm">LINE 帳號綁定</p>
-              <p className="text-xs text-[#aaa] mt-0.5">已綁定</p>
+              <p className="text-xs text-[#aaa] mt-0.5">{lineBound ? "已綁定" : "使用 LINE 登入即自動綁定"}</p>
             </div>
-            <span className="text-xs text-[#22c55e] font-medium">已綁定</span>
+            {lineBound
+              ? <span className="text-xs text-[#22c55e] font-medium">已綁定</span>
+              : <span className="text-xs text-[#ccc]">未綁定</span>
+            }
           </div>
         </Section>
 
         {/* Notifications */}
         <Section title="通知設定">
-          <Toggle label="課程提醒" value={notifyCourse} onChange={() => setNotifyCourse(v => !v)} />
-          <Toggle label="訂單通知" value={notifyOrder} onChange={() => setNotifyOrder(v => !v)} />
+          <Toggle label="課程提醒" value={notifyCourse} onChange={() => { setNotifyCourse(v => { saveNotify(!v, notifyOrder); return !v }) }} />
+          <Toggle label="訂單通知" value={notifyOrder} onChange={() => { setNotifyOrder(v => { saveNotify(notifyCourse, !v); return !v }) }} />
         </Section>
 
         {/* Danger zone */}
@@ -194,12 +268,12 @@ export default function SettingsPage() {
             <p className="text-base font-medium mb-1">確定登出？</p>
             <p className="text-sm text-[#aaa] mb-5">您的資料將安全保存，下次可重新登入。</p>
             <div className="flex flex-col gap-2">
-              <Link
-                href="/m/login"
+              <button
+                onClick={handleLogout}
                 className="block w-full py-3 text-sm text-center bg-black text-white rounded-xl"
               >
                 確認登出
-              </Link>
+              </button>
               <button
                 onClick={() => setLogoutConfirm(false)}
                 className="w-full py-3 text-sm border border-[#f0f0f0] rounded-xl"

@@ -1,19 +1,10 @@
 'use client'
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import Link from "next/link"
 import { ChevronRight, Ticket, Users, BookOpen, ScrollText } from "lucide-react"
-import { STUDENTS as students } from "../_lib/students"
-
-const STUDENTS_KEY = "ftw.students.v1"
-
-type PendingStudent = {
-  id: string
-  name: string
-  age: number
-  relation: string
-  status: "待審核" | "已核准" | "已拒絕"
-}
+import { createClient } from "@/lib/supabase/client"
+import { fetchMemberData, type MemberStudent } from "../_lib/studentsDb"
 
 const quickActions = [
   { label: "購買課堂券", icon: Ticket,     href: "/m/tickets/buy" },
@@ -30,17 +21,30 @@ const menuItems = [
 ]
 
 export default function ProfilePage() {
-  const [pending, setPending] = useState<PendingStudent[]>([])
+  const supabase = useMemo(() => createClient(), [])
+  const [me, setMe] = useState<{ name: string; email: string; avatar: string | null } | null>(null)
+  const [students, setStudents] = useState<MemberStudent[]>([])
+  const [pending, setPending] = useState<MemberStudent[]>([])
+  const [totalTickets, setTotalTickets] = useState(0)
+  const [completedCourses, setCompletedCourses] = useState(0)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    try {
-      const s = localStorage.getItem(STUDENTS_KEY)
-      if (s) {
-        const all: PendingStudent[] = JSON.parse(s)
-        setPending(all.filter(r => r.status === "待審核"))
-      }
-    } catch {}
-  }, [])
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) { setLoading(false); return }
+      const { data: profile } = await supabase.from("profiles")
+        .select("name, avatar_url").eq("id", user.id).maybeSingle()
+      const name = profile?.name || "會員"
+      setMe({ name, email: user.email ?? "", avatar: profile?.avatar_url ?? null })
+
+      const { self, approved, pending, orders } = await fetchMemberData(supabase, name)
+      setStudents([self, ...approved])
+      setPending(pending)
+      setTotalTickets([self, ...approved].reduce((s, t) => s + t.tickets, 0))
+      setCompletedCourses(orders.filter(o => o.course_id && o.status === "已付款").length)
+      setLoading(false)
+    })
+  }, [supabase])
 
   return (
     <div>
@@ -51,15 +55,18 @@ export default function ProfilePage() {
       {/* Profile card */}
       <div className="mx-4 mt-4 bg-[#f2f2f2] rounded-2xl p-5">
         <div className="flex items-center gap-3">
-          <img src="/image/purple.jpg" alt="頭貼" className="w-12 h-12 rounded-full shrink-0 object-cover" />
+          {me?.avatar
+            ? <img src={me.avatar} alt="頭貼" className="w-12 h-12 rounded-full shrink-0 object-cover" />
+            : <div className="w-12 h-12 rounded-full shrink-0 bg-black text-white flex items-center justify-center text-base">{me?.name?.slice(0, 1) ?? "…"}</div>
+          }
           <div>
-            <p className="text-sm font-medium">賴大紫</p>
-            <p className="text-xs text-[#999]">purple@findtheway.com</p>
+            <p className="text-sm font-medium">{me?.name ?? (loading ? "載入中…" : "未登入")}</p>
+            <p className="text-xs text-[#999]">{me?.email}</p>
           </div>
         </div>
         <div className="flex gap-6 mt-4 pt-4 border-t border-[#ddd]">
           <div>
-            <p className="text-2xl font-light">{students.reduce((s, t) => s + t.tickets, 0)}</p>
+            <p className="text-2xl font-light">{totalTickets}</p>
             <p className="text-[10px] text-[#999] mt-0.5">課堂券餘額</p>
           </div>
           <div>
@@ -67,8 +74,8 @@ export default function ProfilePage() {
             <p className="text-[10px] text-[#999] mt-0.5">名下學員</p>
           </div>
           <div>
-            <p className="text-2xl font-light">5</p>
-            <p className="text-[10px] text-[#999] mt-0.5">已完成課程</p>
+            <p className="text-2xl font-light">{completedCourses}</p>
+            <p className="text-[10px] text-[#999] mt-0.5">已報名課程</p>
           </div>
         </div>
       </div>
@@ -99,9 +106,11 @@ export default function ProfilePage() {
           {students.map((student) => (
             <Link key={student.id} href={`/m/students/${student.id}`}
               className="shrink-0 bg-white rounded-xl p-4 w-28 text-center border border-[#f0f0f0]">
-              <div className="w-10 h-10 bg-[#f2f2f2] rounded-full mx-auto mb-2" />
-              <p className="text-sm font-medium">{student.name}</p>
-              <p className="text-[10px] text-[#999]">{student.age} 歲</p>
+              <div className="w-10 h-10 bg-[#f2f2f2] rounded-full mx-auto mb-2 flex items-center justify-center text-sm text-[#999]">
+                {student.name.slice(0, 1)}
+              </div>
+              <p className="text-sm font-medium truncate">{student.name}</p>
+              <p className="text-[10px] text-[#999]">{student.age != null ? `${student.age} 歲` : student.relation}</p>
               <p className="text-xs mt-2">
                 <span className="font-medium">{student.tickets}</span>{" "}
                 <span className="text-[#999]">堂</span>
@@ -115,8 +124,8 @@ export default function ProfilePage() {
               <div className="w-10 h-10 bg-amber-100 rounded-full mx-auto mb-2 flex items-center justify-center text-sm text-amber-600 font-medium">
                 {r.name.slice(0, 1)}
               </div>
-              <p className="text-sm font-medium">{r.name}</p>
-              <p className="text-[10px] text-[#999]">{r.age} 歲</p>
+              <p className="text-sm font-medium truncate">{r.name}</p>
+              <p className="text-[10px] text-[#999]">{r.age != null ? `${r.age} 歲` : r.relation}</p>
               <span className="inline-block mt-2 text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
                 待審核
               </span>
