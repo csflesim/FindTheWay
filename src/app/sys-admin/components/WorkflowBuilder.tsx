@@ -4,6 +4,7 @@ import React, { useRef, useState, useEffect, useCallback } from "react"
 import { useToast } from "./Toast"
 import { useConfirm } from "./Confirm"
 import { loadStoredTemplates, DEFAULT_STORED_TEMPLATES, type StoredTemplate } from "@/lib/templateStore"
+import { loadMsgTemplates, buildLineMessage, emailHtmlOf, fillVars, type MsgTemplate } from "@/lib/msg-templates"
 import { loadWorkflows, saveWorkflows, type SavedWorkflow } from "@/lib/workflowStore"
 
 /* ─────────────── 型別與常數 ─────────────── */
@@ -199,9 +200,20 @@ export default function WorkflowBuilder({ config }: { config: WorkflowConfig }) 
   const dragRef = useRef<{ id: string; offX: number; offY: number } | null>(null)
 
   const [storedTpls, setStoredTpls] = useState<StoredTemplate[]>(DEFAULT_STORED_TEMPLATES)
-  useEffect(() => { const l = loadStoredTemplates(); if (l.length) setStoredTpls(l) }, [])
-  const emailTplNames = storedTpls.filter(t => t.emailOn).map(t => t.name)
-  const lineTplNames  = storedTpls.filter(t => t.lineOn).map(t => t.name)
+  const [msgTpls, setMsgTpls]       = useState<MsgTemplate[]>([])
+  useEffect(() => {
+    const l = loadStoredTemplates(); if (l.length) setStoredTpls(l)
+    setMsgTpls(loadMsgTemplates())
+  }, [])
+  // 訊息管理（v2）的模板優先，舊簡易模板作為補充
+  const emailTplNames = [...new Set([
+    ...msgTpls.filter(t => t.emailOn).map(t => t.name),
+    ...storedTpls.filter(t => t.emailOn).map(t => t.name),
+  ])]
+  const lineTplNames = [...new Set([
+    ...msgTpls.filter(t => t.lineOn).map(t => t.name),
+    ...storedTpls.filter(t => t.lineOn).map(t => t.name),
+  ])]
 
   const [flows, setFlows]               = useState<SavedWorkflow[]>([])
   const [showTemplates, setShowTemplates] = useState(false)
@@ -310,20 +322,26 @@ export default function WorkflowBuilder({ config }: { config: WorkflowConfig }) 
   }
   const deleteEdge = (id: string) => setEdges(prev => prev.filter(e => e.id !== id))
 
-  // 真實寄送：套用模板內容打 /api/email/send、/api/line/send
-  const findTpl = (name?: string) => storedTpls.find(t => t.name === name)
+  // 真實寄送：優先套用訊息管理（v2）的設計（含 Flex），找不到才退回舊簡易模板
+  const findMsgTpl = (name?: string) => msgTpls.find(t => t.name === name)
+  const findOldTpl = (name?: string) => storedTpls.find(t => t.name === name)
 
   const sendRealEmail = async (tplName?: string): Promise<{ ok: boolean; error?: string }> => {
-    const tpl = findTpl(tplName)
+    const v2 = findMsgTpl(tplName)
+    const old = findOldTpl(tplName)
     try {
       const res = await fetch("/api/email/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: JSON.stringify(v2 ? {
           to: testEmail.trim(),
-          subject: tpl?.emailSubject || `【工作流測試】${tplName ?? "通知"}`,
-          html: tpl?.emailHtml || undefined,
-          text: tpl?.emailHtml ? undefined : `這是工作流「${tplName ?? "通知"}」的測試信。`,
+          subject: fillVars(v2.email.subject) || `【工作流測試】${tplName}`,
+          html: emailHtmlOf(v2),
+        } : {
+          to: testEmail.trim(),
+          subject: old?.emailSubject || `【工作流測試】${tplName ?? "通知"}`,
+          html: old?.emailHtml || undefined,
+          text: old?.emailHtml ? undefined : `這是工作流「${tplName ?? "通知"}」的測試信。`,
         }),
       })
       const d = await res.json()
@@ -334,15 +352,16 @@ export default function WorkflowBuilder({ config }: { config: WorkflowConfig }) 
   }
 
   const sendRealLine = async (tplName?: string): Promise<{ ok: boolean; error?: string }> => {
-    const tpl = findTpl(tplName)
+    const v2 = findMsgTpl(tplName)
+    const old = findOldTpl(tplName)
+    const message = v2
+      ? buildLineMessage(v2.line)   // Flex Bubble 或純文字，依模板設計
+      : { type: "text", text: old?.lineText || `這是工作流「${tplName ?? "通知"}」的測試訊息。` }
     try {
       const res = await fetch("/api/line/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          to: testLineId.trim(),
-          messages: [{ type: "text", text: tpl?.lineText || `這是工作流「${tplName ?? "通知"}」的測試訊息。` }],
-        }),
+        body: JSON.stringify({ to: testLineId.trim(), messages: [message] }),
       })
       const d = await res.json()
       return d.ok ? { ok: true } : { ok: false, error: d.error ?? JSON.stringify(d) }
