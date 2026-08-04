@@ -48,46 +48,68 @@ export async function GET(req: NextRequest) {
       return res
     }
 
-    const syntheticEmail = `line_${profile.userId}@findtheway.app`
+    // Supabase 會把 email 轉小寫儲存，這裡必須先轉小寫，否則第二次登入比對不到
+    const syntheticEmail = `line_${profile.userId}@findtheway.app`.toLowerCase()
 
     const admin = createAdminClient()
 
     // --- Find or create Supabase auth user ---
     let supabaseUid: string | undefined
 
-    const { data: created, error: createErr } = await admin.auth.admin.createUser({
-      email: syntheticEmail,
-      email_confirm: true,
-      user_metadata: {
-        line_user_id: profile.userId,
-        display_name: profile.displayName,
-        picture_url: profile.pictureUrl ?? "",
-      },
-    })
+    // 1) 既有帳號：用 profiles.line_user_id 直查（unique）
+    const { data: existingProfile } = await admin
+      .from("profiles")
+      .select("id")
+      .eq("line_user_id", profile.userId)
+      .maybeSingle()
+    if (existingProfile?.id) {
+      supabaseUid = existingProfile.id as string
+      await admin.auth.admin.updateUserById(existingProfile.id as string, {
+        user_metadata: {
+          line_user_id: profile.userId,
+          display_name: profile.displayName,
+          picture_url: profile.pictureUrl ?? "",
+        },
+      })
+    }
 
-    if (!createErr) {
-      supabaseUid = created.user.id
-    } else {
-      // User already exists — scan by synthetic email (acceptable at workshop scale)
-      let page = 1
-      outer: while (true) {
-        const { data: list } = await admin.auth.admin.listUsers({ page, perPage: 1000 })
-        if (!list || list.users.length === 0) break
-        for (const u of list.users) {
-          if (u.email === syntheticEmail) {
-            supabaseUid = u.id
-            await admin.auth.admin.updateUserById(u.id, {
-              user_metadata: {
-                line_user_id: profile.userId,
-                display_name: profile.displayName,
-                picture_url: profile.pictureUrl ?? "",
-              },
-            })
-            break outer
+    // 2) 沒有 → 建新帳號
+    if (!supabaseUid) {
+      const { data: created, error: createErr } = await admin.auth.admin.createUser({
+        email: syntheticEmail,
+        email_confirm: true,
+        user_metadata: {
+          line_user_id: profile.userId,
+          display_name: profile.displayName,
+          picture_url: profile.pictureUrl ?? "",
+        },
+      })
+      if (!createErr) {
+        supabaseUid = created.user.id
+      } else {
+        // Email 已存在但 profile 沒記到 line_user_id — 用 email（小寫比對）掃描補救
+        let page = 1
+        outer: while (true) {
+          const { data: list } = await admin.auth.admin.listUsers({ page, perPage: 1000 })
+          if (!list || list.users.length === 0) break
+          for (const u of list.users) {
+            if (u.email?.toLowerCase() === syntheticEmail) {
+              supabaseUid = u.id
+              await admin.auth.admin.updateUserById(u.id, {
+                user_metadata: {
+                  line_user_id: profile.userId,
+                  display_name: profile.displayName,
+                  picture_url: profile.pictureUrl ?? "",
+                },
+              })
+              // 補寫 line_user_id 讓下次直查命中
+              await admin.from("profiles").update({ line_user_id: profile.userId }).eq("id", u.id)
+              break outer
+            }
           }
+          if (list.users.length < 1000) break
+          page++
         }
-        if (list.users.length < 1000) break
-        page++
       }
     }
 
