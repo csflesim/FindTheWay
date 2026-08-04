@@ -119,9 +119,13 @@ export async function GET(req: NextRequest) {
     }
 
     // --- Generate a magic link token and exchange it for a real session ---
+    // 綁定過真實 Email 的帳號，magiclink 必須用實際帳號 email 產生
+    const { data: authUser } = await admin.auth.admin.getUserById(supabaseUid)
+    const accountEmail = authUser?.user?.email ?? syntheticEmail
+
     const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
       type: "magiclink",
-      email: syntheticEmail,
+      email: accountEmail,
     })
 
     if (linkErr || !linkData?.properties?.hashed_token) {
@@ -132,7 +136,10 @@ export async function GET(req: NextRequest) {
     // Build response redirect first, then let the SSR client write session cookies onto it
     const rawNext = req.cookies.get("line_next")?.value
     const next = rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/m"
-    const res = NextResponse.redirect(new URL(next, BASE))
+    // 尚未綁定真實 Email → 先到綁定頁（驗證碼驗證後才放行）
+    const needsBind = accountEmail.endsWith("@findtheway.app")
+    const dest = needsBind ? `/m/bind-email?next=${encodeURIComponent(next)}` : next
+    const res = NextResponse.redirect(new URL(dest, BASE))
     res.cookies.delete("line_state")
     res.cookies.delete("line_next")
 

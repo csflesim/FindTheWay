@@ -5,7 +5,7 @@ import { NextResponse, type NextRequest } from "next/server";
 export type SessionContext = {
   response: NextResponse;
   supabase: SupabaseClient;
-  user: { id: string } | null;
+  user: { id: string; email?: string } | null;
 };
 
 export async function updateSession(request: NextRequest): Promise<SessionContext> {
