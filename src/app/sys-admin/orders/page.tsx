@@ -1,34 +1,25 @@
 'use client'
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { Search, Plus, X } from "lucide-react"
+import { createClient } from "@/lib/supabase/client"
 import {
-  Order, PayStatus, Ticket,
-  INITIAL_ORDERS, makeTickets,
+  Order, OrderRow, PayStatus, PAY_METHODS, Product,
+  ORDER_SELECT, orderFromRow, issueTickets,
   payStatusStyle, useStatusStyle, getUseStatus,
-  OrderDetail,
+  ticketConsumed, OrderDetail,
 } from "../_lib/orders"
+import { AfterSalesPanel } from "../_lib/aftersales"
 
-const PACKAGES = [
-  { name: "單堂試課券", qty: 1,  price: 1200 },
-  { name: "5堂精選包",  qty: 5,  price: 5500 },
-  { name: "10堂體驗包", qty: 10, price: 9800 },
-  { name: "20堂年繳包", qty: 20, price: 18000 },
-]
+type Account = { id: string; name: string }
+type StudentRef = { id: string; name: string; owner_id: string }
 
-const ACCOUNTS = [
-  { name: "鄭大德", students: ["鄭小德", "鄭小明"] },
-  { name: "賴大紫", students: ["賴小柏", "賴小紫", "林小雅"] },
-]
-
-const PAY_METHODS = ["銀行轉帳", "現金", "Line Pay", "信用卡"]
-const ALL_PAY_STATUSES: PayStatus[] = ["已付款", "待確認", "已退款"]
+const ALL_PAY_STATUSES: PayStatus[] = ["已付款", "待確認", "已退款", "已取消", "已售後"]
 
 const EMPTY_FORM = {
-  account: "",
-  studentName: "",
-  item: "",
-  qty: 1,
+  accountId: "",
+  studentId: "",
+  productId: "",
   amount: 0,
   payMethod: "銀行轉帳",
   payStatus: "待確認" as PayStatus,
@@ -65,33 +56,43 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 const inputCls = "w-full px-3 py-2.5 text-sm bg-[#fafaf9] border border-[#f0f0f0] rounded-xl outline-none focus:border-black focus:bg-white transition-colors"
 
-// ── Helpers ──────────────────────────────────────────
-
-function nextOrderId(orders: Order[]) {
-  const nums = orders.map(o => parseInt(o.id.replace("ORD-", ""), 10)).filter(n => !isNaN(n))
-  const max = nums.length ? Math.max(...nums) : 40
-  return `ORD-${String(max + 1).padStart(4, "0")}`
-}
-
-function todayMMDD() {
-  const d = new Date()
-  return `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`
-}
-
 // ── Main Page ────────────────────────────────────────
 
 export default function OrdersPage() {
-  const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS)
-  const [query, setQuery] = useState("")
+  const supabase = useMemo(() => createClient(), [])
+  const [orders, setOrders]           = useState<Order[]>([])
+  const [accounts, setAccounts]       = useState<Account[]>([])
+  const [students, setStudents]       = useState<StudentRef[]>([])
+  const [products, setProducts]       = useState<Product[]>([])
+  const [loading, setLoading]         = useState(true)
+  const [saving, setSaving]           = useState(false)
+  const [query, setQuery]             = useState("")
   const [filterStatus, setFilterStatus] = useState<PayStatus | "全部">("全部")
-  const [drawer, setDrawer] = useState(false)
-  const [detail, setDetail] = useState<Order | null>(null)
-  const [form, setForm] = useState(EMPTY_FORM)
+  const [drawer, setDrawer]           = useState(false)
+  const [detail, setDetail]           = useState<Order | null>(null)
+  const [afterSalesTarget, setAfterSalesTarget] = useState<Order | null>(null)
+  const [form, setForm]               = useState(EMPTY_FORM)
+
+  useEffect(() => {
+    Promise.all([
+      supabase.from("orders").select(ORDER_SELECT).order("created_at", { ascending: false }),
+      supabase.from("profiles").select("id, name").order("name"),
+      supabase.from("students").select("id, name, owner_id").eq("status", "已核准"),
+      supabase.from("products").select("id, name, sessions, price, validity_months").eq("active", true).order("sort_order"),
+    ]).then(([oRes, pRes, sRes, prodRes]) => {
+      if (oRes.error) console.error("載入訂單失敗:", oRes.error.message)
+      else setOrders((oRes.data as unknown as OrderRow[]).map(orderFromRow))
+      setAccounts((pRes.data ?? []) as Account[])
+      setStudents((sRes.data ?? []) as StudentRef[])
+      setProducts((prodRes.data ?? []) as Product[])
+      setLoading(false)
+    })
+  }, [supabase])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     return orders.filter(o => {
-      const matchQ = !q || o.id.toLowerCase().includes(q) || o.student.includes(q) || o.account.includes(q) || o.item.includes(q)
+      const matchQ = !q || o.orderNo.toLowerCase().includes(q) || o.student.includes(q) || o.account.includes(q) || o.item.includes(q)
       const matchS = filterStatus === "全部" || o.payStatus === filterStatus
       return matchQ && matchS
     })
@@ -101,44 +102,95 @@ export default function OrdersPage() {
     setForm(f => ({ ...f, [k]: v }))
   }
 
-  function selectAccount(name: string) {
-    setForm(f => ({ ...f, account: name, studentName: "" }))
+  function selectPackage(id: string) {
+    const pkg = products.find(p => p.id === id)
+    setForm(f => ({ ...f, productId: id, amount: pkg?.price ?? 0 }))
   }
 
-  function selectPackage(name: string) {
-    const pkg = PACKAGES.find(p => p.name === name)
-    setForm(f => ({ ...f, item: name, qty: pkg?.qty ?? 1, amount: pkg?.price ?? 0 }))
+  async function refetchOrder(id: string): Promise<Order | null> {
+    const { data, error } = await supabase.from("orders").select(ORDER_SELECT).eq("id", id).maybeSingle()
+    if (error || !data) return null
+    return orderFromRow(data as unknown as OrderRow)
   }
 
-  function saveAdd() {
-    const id = nextOrderId(orders)
-    const order: Order = {
-      id,
-      student: form.studentName,
-      account: form.account,
-      item: form.item,
-      qty: form.qty,
-      amount: form.amount,
-      date: todayMMDD(),
-      payStatus: form.payStatus,
-      payMethod: form.payMethod,
-      notes: form.notes || undefined,
-      tickets: makeTickets(id, form.qty, 0),
+  async function saveAdd() {
+    if (saving) return
+    const pkg = products.find(p => p.id === form.productId)
+    if (!form.accountId || !pkg) return
+    setSaving(true)
+    try {
+      const paid = form.payStatus === "已付款"
+      const { data, error } = await supabase.from("orders").insert({
+        member_id: form.accountId,
+        student_id: form.studentId || null,
+        product_id: pkg.id,
+        item_name: pkg.name,
+        qty: pkg.sessions,
+        amount: form.amount,
+        status: form.payStatus,
+        pay_method: paid ? form.payMethod : null,
+        paid_at: paid ? new Date().toISOString() : null,
+        notes: form.notes || null,
+      }).select("id, order_no, student_id, qty").single()
+      if (error) throw new Error(error.message)
+
+      if (paid) {
+        const errMsg = await issueTickets(supabase, {
+          id: data.id, orderNo: data.order_no, studentId: data.student_id, qty: data.qty,
+        }, pkg.validity_months)
+        if (errMsg) throw new Error(errMsg)
+      }
+      const fresh = await refetchOrder(data.id)
+      if (fresh) setOrders(prev => [fresh, ...prev])
+      setDrawer(false)
+      setForm(EMPTY_FORM)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "新增失敗")
+    } finally {
+      setSaving(false)
     }
-    setOrders(prev => [order, ...prev])
-    setDrawer(false)
-    setForm(EMPTY_FORM)
   }
 
-  function confirmPayment(id: string) {
-    setOrders(prev => prev.map(o => o.id === id ? { ...o, payStatus: "已付款" as PayStatus } : o))
-    setDetail(prev => prev?.id === id ? { ...prev, payStatus: "已付款" as PayStatus } : prev)
+  async function confirmPayment(order: Order, method: string) {
+    if (saving) return
+    setSaving(true)
+    try {
+      const { error } = await supabase.from("orders")
+        .update({ status: "已付款", pay_method: method, paid_at: new Date().toISOString() })
+        .eq("id", order.id)
+      if (error) throw new Error(error.message)
+
+      // 券包訂單發券（單堂直購 product_id 為 null，不發券）
+      const pkg = products.find(p => p.id === order.productId)
+      if (pkg && order.tickets.length === 0) {
+        const errMsg = await issueTickets(supabase, {
+          id: order.id, orderNo: order.orderNo, studentId: order.studentId, qty: order.qty,
+        }, pkg.validity_months)
+        if (errMsg) throw new Error(errMsg)
+      }
+      const fresh = await refetchOrder(order.id)
+      if (fresh) setOrders(prev => prev.map(o => o.id === order.id ? fresh : o))
+      setDetail(null)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "確認付款失敗")
+    } finally {
+      setSaving(false)
+    }
   }
 
-  function refund(id: string) {
-    setOrders(prev => prev.map(o => o.id === id ? { ...o, payStatus: "已退款" as PayStatus } : o))
-    setDetail(prev => prev?.id === id ? { ...prev, payStatus: "已退款" as PayStatus } : prev)
+  async function cancelOrder(id: string) {
+    const { error } = await supabase.from("orders").update({ status: "已取消" }).eq("id", id)
+    if (error) { alert(`取消失敗：${error.message}`); return }
+    setOrders(prev => prev.map(o => o.id === id ? { ...o, payStatus: "已取消" as PayStatus } : o))
+    setDetail(null)
   }
+
+  function handleAfterSalesProcessed(updated: Order) {
+    setOrders(prev => prev.map(o => o.id === updated.id ? updated : o))
+    setAfterSalesTarget(null)
+  }
+
+  const accountStudents = students.filter(s => s.owner_id === form.accountId)
 
   return (
     <div className="p-4 md:p-6 w-full">
@@ -187,10 +239,11 @@ export default function OrdersPage() {
       {/* Desktop table */}
       <div className="hidden md:block bg-white rounded-xl border border-[#f0f0f0] overflow-hidden">
         <div className="grid grid-cols-[0.7fr_0.8fr_0.8fr_1.2fr_0.8fr_0.5fr_0.75fr_1fr_auto] gap-3 px-5 py-3 border-b border-[#f5f5f5] text-[11px] text-[#aaa] uppercase tracking-widest">
-          <span>訂單</span><span>學員</span><span>所屬帳號</span><span>組合</span><span>金額</span><span>日期</span><span>付款狀態</span><span>使用狀態</span><span />
+          <span>訂單</span><span>學員</span><span>所屬帳號</span><span>品項</span><span>金額</span><span>日期</span><span>付款狀態</span><span>使用狀態</span><span />
         </div>
         <div className="divide-y divide-[#f5f5f5]">
-          {filtered.length === 0 && <p className="px-5 py-6 text-sm text-[#ccc]">查無訂單</p>}
+          {loading && <p className="px-5 py-6 text-sm text-[#ccc]">載入中…</p>}
+          {!loading && filtered.length === 0 && <p className="px-5 py-6 text-sm text-[#ccc]">查無訂單</p>}
           {filtered.map((o) => {
             const useStatus = getUseStatus(o)
             return (
@@ -199,7 +252,7 @@ export default function OrdersPage() {
                 className="grid grid-cols-[0.7fr_0.8fr_0.8fr_1.2fr_0.8fr_0.5fr_0.75fr_1fr_auto] gap-3 items-center px-5 py-4 hover:bg-[#fafaf9] transition-colors cursor-pointer"
                 onClick={() => setDetail(o)}
               >
-                <p className="text-xs text-[#999] font-mono">{o.id}</p>
+                <p className="text-xs text-[#999] font-mono">{o.orderNo}</p>
                 <p className="text-sm font-medium">{o.student}</p>
                 <p className="text-xs text-[#aaa]">{o.account}</p>
                 <p className="text-sm text-[#666]">{o.item}</p>
@@ -220,7 +273,8 @@ export default function OrdersPage() {
 
       {/* Mobile cards */}
       <div className="md:hidden flex flex-col gap-3">
-        {filtered.length === 0 && <p className="text-sm text-[#ccc] py-4">查無訂單</p>}
+        {loading && <p className="text-sm text-[#ccc] py-4">載入中…</p>}
+        {!loading && filtered.length === 0 && <p className="text-sm text-[#ccc] py-4">查無訂單</p>}
         {filtered.map((o) => {
           const useStatus = getUseStatus(o)
           return (
@@ -232,7 +286,7 @@ export default function OrdersPage() {
               <div className="flex items-start justify-between gap-2 mb-1">
                 <div>
                   <p className="text-sm font-medium">{o.student}</p>
-                  <p className="text-xs text-[#aaa]">{o.id} · {o.date}</p>
+                  <p className="text-xs text-[#aaa]">{o.orderNo} · {o.date}</p>
                 </div>
                 <div className="flex flex-col items-end gap-1">
                   <span className={`text-[11px] px-2.5 py-1 rounded-full ${payStatusStyle[o.payStatus]}`}>{o.payStatus}</span>
@@ -253,30 +307,31 @@ export default function OrdersPage() {
         <Drawer title="手動新增訂單" onClose={() => setDrawer(false)}>
           <div className="flex flex-col gap-5 p-6">
             <Field label="所屬帳號">
-              <select className={inputCls} value={form.account} onChange={e => selectAccount(e.target.value)}>
+              <select className={inputCls} value={form.accountId}
+                onChange={e => setForm(f => ({ ...f, accountId: e.target.value, studentId: "" }))}>
                 <option value="">選擇帳號</option>
-                {ACCOUNTS.map(a => <option key={a.name} value={a.name}>{a.name}</option>)}
+                {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
             </Field>
 
-            <Field label="學員">
+            <Field label="學員（選填）">
               <select
                 className={inputCls}
-                value={form.studentName}
-                onChange={e => set("studentName", e.target.value)}
-                disabled={!form.account}
+                value={form.studentId}
+                onChange={e => set("studentId", e.target.value)}
+                disabled={!form.accountId}
               >
-                <option value="">{form.account ? "選擇學員" : "請先選擇帳號"}</option>
-                {(ACCOUNTS.find(a => a.name === form.account)?.students ?? []).map(s => (
-                  <option key={s} value={s}>{s}</option>
+                <option value="">{form.accountId ? "不指定（本人）" : "請先選擇帳號"}</option>
+                {accountStudents.map(s => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
               </select>
             </Field>
 
             <Field label="課堂券組合">
-              <select className={inputCls} value={form.item} onChange={e => selectPackage(e.target.value)}>
+              <select className={inputCls} value={form.productId} onChange={e => selectPackage(e.target.value)}>
                 <option value="">選擇組合</option>
-                {PACKAGES.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
+                {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </Field>
 
@@ -326,9 +381,9 @@ export default function OrdersPage() {
               取消
             </button>
             <button onClick={saveAdd}
-              disabled={!form.account || !form.studentName || !form.item || form.amount <= 0}
+              disabled={saving || !form.accountId || !form.productId || form.amount <= 0}
               className="flex-1 py-2.5 text-sm bg-black text-white rounded-xl hover:bg-[#222] disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-              新增
+              {saving ? "儲存中…" : "新增"}
             </button>
           </div>
         </Drawer>
@@ -339,8 +394,22 @@ export default function OrdersPage() {
         <OrderDetail
           order={detail}
           onClose={() => setDetail(null)}
-          onConfirm={() => confirmPayment(detail.id)}
-          onRefund={() => refund(detail.id)}
+          onConfirm={detail.payStatus === "待確認" ? (method) => confirmPayment(detail, method) : undefined}
+          onCancel={detail.payStatus === "待確認" ? () => cancelOrder(detail.id) : undefined}
+          onInitiateAfterSales={
+            detail.payStatus === "已付款" && detail.tickets.some(ticketConsumed)
+              ? () => { setAfterSalesTarget(detail); setDetail(null) }
+              : undefined
+          }
+        />
+      )}
+
+      {/* ── After-Sales Panel ── */}
+      {afterSalesTarget && (
+        <AfterSalesPanel
+          order={afterSalesTarget}
+          onClose={() => setAfterSalesTarget(null)}
+          onProcessed={handleAfterSalesProcessed}
         />
       )}
     </div>

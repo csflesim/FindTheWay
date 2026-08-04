@@ -1,7 +1,19 @@
 'use client'
 
-import { useState } from "react"
-import { Search, Plus, X, Trash2, BookOpen, Ticket } from "lucide-react"
+import { useState, useEffect } from "react"
+import { Search, Plus, X, Trash2, BookOpen, Ticket, Check } from "lucide-react"
+
+const STUDENTS_KEY = "ftw.students.v1"
+
+type StudentRequest = {
+  id: string
+  name: string
+  age: number
+  relation: string
+  account: string
+  submittedAt: string
+  status: "待審核" | "已核准" | "已拒絕"
+}
 
 type Relation = "本人" | "子女" | "配偶" | "其他"
 
@@ -82,6 +94,42 @@ export default function StudentsPage() {
   const [selected, setSelected] = useState<Student | null>(null)
   const [nextId, setNextId]     = useState(10)
   const [form, setForm]         = useState({ name: "", age: "", types: ["內部"] as ("內部"|"外部")[], account: ACCOUNTS[0], relation: "子女" as Relation, category: "", unit: "", classGroup: "", notes: "" })
+  const [requests, setRequests] = useState<StudentRequest[]>([])
+
+  useEffect(() => {
+    try {
+      const s = localStorage.getItem(STUDENTS_KEY)
+      if (s) setRequests(JSON.parse(s))
+    } catch {}
+  }, [])
+
+  function updateRequest(id: string, status: "已核准" | "已拒絕") {
+    setRequests(prev => {
+      const next = prev.map(r => r.id === id ? { ...r, status } : r)
+      try { localStorage.setItem(STUDENTS_KEY, JSON.stringify(next)) } catch {}
+      if (status === "已核准") {
+        const req = prev.find(r => r.id === id)
+        if (req) {
+          const s: Student = {
+            id: nextId,
+            name: req.name,
+            age: req.age,
+            types: ["內部"],
+            account: req.account,
+            relation: req.relation as Relation,
+            tickets: 0,
+            courses: [],
+            lastActive: "—",
+          }
+          setStudents(p => [...p, s])
+          setNextId(n => n + 1)
+        }
+      }
+      return next
+    })
+  }
+
+  const pending = requests.filter(r => r.status === "待審核")
 
   const internal = students.filter(s => s.types.includes("內部"))
   const external = students.filter(s => s.types.includes("外部"))
@@ -150,6 +198,47 @@ export default function StudentsPage() {
       </div>
 
       <div className="flex flex-col gap-5">
+
+        {/* ── 待審核申請 ── */}
+        {pending.length > 0 && (
+          <div className="bg-white rounded-xl border border-amber-200 overflow-hidden">
+            <div className="flex items-center gap-2 px-5 py-3 border-b border-amber-100 bg-amber-50">
+              <p className="text-xs font-medium text-amber-800">待審核申請</p>
+              <span className="text-[11px] bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded-full">{pending.length}</span>
+            </div>
+            <div className="divide-y divide-[#f9f9f9]">
+              {pending.map(r => (
+                <div key={r.id} className="flex items-center gap-4 px-5 py-4">
+                  <div className="w-8 h-8 bg-amber-100 rounded-full shrink-0 flex items-center justify-center text-sm text-amber-700 font-medium">
+                    {r.name.slice(0, 1)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-medium">{r.name}</p>
+                      <span className="text-[10px] bg-[#f5f5f5] text-[#666] px-1.5 py-0.5 rounded-full">{r.age}歲</span>
+                      <span className="text-[10px] bg-[#f5f5f5] text-[#666] px-1.5 py-0.5 rounded-full">{r.relation}</span>
+                    </div>
+                    <p className="text-xs text-[#aaa] mt-0.5">{r.account} · {r.submittedAt}</p>
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    <button
+                      onClick={() => updateRequest(r.id, "已拒絕")}
+                      className="px-3 py-1.5 text-xs border border-[#f0f0f0] rounded-lg text-[#999] hover:border-red-200 hover:text-red-500 transition-colors"
+                    >
+                      拒絕
+                    </button>
+                    <button
+                      onClick={() => updateRequest(r.id, "已核准")}
+                      className="flex items-center gap-1 px-3 py-1.5 text-xs bg-black text-white rounded-lg hover:bg-[#222] transition-colors"
+                    >
+                      <Check size={11} strokeWidth={2.5} />核准
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* ── 內部學員 ── */}
         <div className="bg-white rounded-xl border border-[#f0f0f0] overflow-hidden">

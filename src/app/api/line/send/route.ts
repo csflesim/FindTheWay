@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getLineConfig } from "@/lib/line-config"
+import { getLineMsgConfig } from "@/lib/line-config"
 import { pushLineMessage, broadcastLineMessage } from "@/lib/line"
+import { requireStaff } from "@/lib/admin-guard"
 
 export async function POST(req: NextRequest) {
+  if (!(await requireStaff())) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+  }
   const body = await req.json()
   const { to, messages, broadcast } = body as {
     to?: string
@@ -10,7 +14,7 @@ export async function POST(req: NextRequest) {
     broadcast?: boolean
   }
 
-  const config = getLineConfig()
+  const config = getLineMsgConfig()
   if (!config.accessToken) {
     return NextResponse.json(
       { error: "尚未設定 LINE Channel Access Token，請至後台「參數管理」填入。" },

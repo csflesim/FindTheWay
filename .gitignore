@@ -37,6 +37,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# runtime credentials (LINE config saved by admin)
+data/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

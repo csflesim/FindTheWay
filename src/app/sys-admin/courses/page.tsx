@@ -1,73 +1,31 @@
 'use client'
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Plus, Search, X, Trash2, ClipboardList, ChevronLeft, ChevronRight, Upload, CalendarDays } from "lucide-react"
+import { createClient } from "@/lib/supabase/client"
+import { uploadImage } from "@/lib/upload"
+import { expandScheduleToMonth, mergeMonthEvents, type ScheduleEvent } from "@/lib/schedule"
 
 type AttendRecord = { name: string; status: "出席" | "請假" | "缺席" }
-type Session = { date: string; records: AttendRecord[] }
-
-const ATTENDANCE_DATA: Record<number, Session[]> = {
-  7: [
-    {
-      date: "2026/06/10", records: [
-        { name: "陳小安", status: "出席" },
-        { name: "王小明", status: "出席" },
-        { name: "李小華", status: "請假" },
-        { name: "林小雅", status: "出席" },
-      ]
-    },
-    {
-      date: "2026/06/03", records: [
-        { name: "陳小安", status: "出席" },
-        { name: "王小明", status: "缺席" },
-        { name: "李小華", status: "出席" },
-        { name: "林小雅", status: "出席" },
-      ]
-    },
-    {
-      date: "2026/05/27", records: [
-        { name: "陳小安", status: "出席" },
-        { name: "王小明", status: "出席" },
-        { name: "李小華", status: "出席" },
-        { name: "林小雅", status: "缺席" },
-      ]
-    },
-  ],
-  8: [
-    {
-      date: "2026/06/08", records: [
-        { name: "賴小柏", status: "出席" },
-        { name: "賴小紫", status: "出席" },
-        { name: "陳小安", status: "請假" },
-      ]
-    },
-    {
-      date: "2026/06/01", records: [
-        { name: "賴小柏", status: "出席" },
-        { name: "賴小紫", status: "缺席" },
-        { name: "陳小安", status: "出席" },
-      ]
-    },
-  ],
-}
+type Session = { id: string; date: string; records: AttendRecord[] }
 
 type Course = {
-  id: number
+  id: string
   title: string
   types: ("內部" | "外部")[]
-  teachers: string[]
+  teacherIds: string[]
   schedule: string
   status: "開課中" | "草稿" | "已結束"
   visible: boolean
   imgSquare?: string
   imgLandscape?: string
   // 內部
-  studio?: string
+  classroomId?: string | null
   enrolled?: number
   capacity?: number
   ticketTypes?: string[]
   // 外部
-  partner?: string
+  unitId?: string | null
   subUnit?: string
   location?: string
   notes?: string
@@ -76,16 +34,44 @@ type Course = {
   highlights?: string[]
 }
 
-const INITIAL_COURSES: Course[] = [
-  { id: 1, title: "基礎水彩入門", types: ["內部"], teachers: ["小紫老師", "明德老師"], schedule: "每週六 10:00–12:00", studio: "A", enrolled: 8, capacity: 10, status: "開課中", visible: true, imgSquare: "/image/watercolor800x800.png", imgLandscape: "/image/watercolor1200x400.png" },
-  { id: 2, title: "成人油畫工作坊", types: ["內部"], teachers: ["小紫老師", "明德老師"], schedule: "每週五 19:00–21:00", studio: "B", enrolled: 6, capacity: 8, status: "開課中", visible: true, imgSquare: "/image/oilpainting800x800.png", imgLandscape: "/image/oilpainting1200x400.png" },
-  { id: 3, title: "兒童創意素描", types: ["內部"], teachers: ["小紫老師", "明德老師"], schedule: "每週日 14:00–15:30", studio: "A", enrolled: 9, capacity: 10, status: "開課中", visible: true, imgSquare: "/image/sketch800x800.png", imgLandscape: "/image/sketch1200x400.png" },
-  { id: 4, title: "親子藝術探索", types: ["內部"], teachers: ["小紫老師", "明德老師"], schedule: "每週六 14:00–15:30", studio: "B", enrolled: 4, capacity: 8, status: "開課中", visible: true, imgSquare: "/image/FamilyArt800x800.png", imgLandscape: "/image/FamilyArt1200x400.png" },
-  { id: 5, title: "水墨入門體驗", types: ["內部"], teachers: ["小紫老師", "明德老師"], schedule: "每週三 19:00–21:00", studio: "C", enrolled: 5, capacity: 8, status: "開課中", visible: true, imgSquare: "/image/inkpainting800x800.png", imgLandscape: "/image/inkpainting1200x400.png" },
-  { id: 6, title: "進階油畫技法", types: ["內部"], teachers: ["明德老師"], schedule: "待排課", studio: "–", enrolled: 0, capacity: 8, status: "草稿", visible: false },
-  { id: 7, title: "兒童水彩啟蒙", types: ["外部"], teachers: ["小紫老師"], schedule: "每週二 15:00–16:30", partner: "大安國小", subUnit: "美術班", location: "美術教室", status: "開課中", visible: true },
-  { id: 8, title: "親子創意手作", types: ["內部", "外部"], teachers: ["小紫老師", "明德老師"], schedule: "每週日 10:00–12:00", studio: "B", enrolled: 5, capacity: 8, partner: "社區發展協會", subUnit: "親子班", location: "工作坊", status: "開課中", visible: true },
-]
+type TeacherRef = { id: string; name: string }
+type ClassroomRef = { id: string; name: string }
+type UnitRef = { id: string; name: string; subUnits: { name: string; location: string }[] }
+
+type CourseRow = {
+  id: string
+  title: string
+  types: ("內部" | "外部")[]
+  schedule: string
+  status: Course["status"]
+  visible: boolean
+  classroom_id: string | null
+  capacity: number
+  enrolled: number
+  ticket_types: string[]
+  unit_id: string | null
+  sub_unit: string | null
+  location: string | null
+  description: string | null
+  highlights: string[]
+  notes: string | null
+  cover_url: string | null
+  banner_url: string | null
+  course_teachers?: { teacher_id: string }[]
+}
+
+function fromRow(r: CourseRow): Course {
+  return {
+    id: r.id, title: r.title, types: r.types, schedule: r.schedule,
+    status: r.status, visible: r.visible,
+    teacherIds: (r.course_teachers ?? []).map(ct => ct.teacher_id),
+    classroomId: r.classroom_id, enrolled: r.enrolled, capacity: r.capacity,
+    ticketTypes: r.ticket_types ?? [],
+    unitId: r.unit_id, subUnit: r.sub_unit ?? "", location: r.location ?? "",
+    notes: r.notes ?? "", desc: r.description ?? "", highlights: r.highlights ?? [],
+    imgSquare: r.cover_url ?? "", imgLandscape: r.banner_url ?? "",
+  }
+}
 
 const TIMES: string[] = (() => {
   const t: string[] = []
@@ -113,47 +99,28 @@ function buildSchedule(f: { scheduleType: string; scheduleDay: string; scheduleD
   return `${f.scheduleDate.replace(/-/g, "/")} ${f.scheduleStart}–${f.scheduleEnd}`
 }
 
-const TEACHERS = ["小紫老師", "明德老師"]
-
-// ── Teacher schedule data ────────────────────────────
-type TCourse = { title: string; time: string; studio: string }
-type TSchedule = Record<string, TCourse[]>
-
-const TEACHER_SCHEDULE: Record<string, TSchedule> = {
-  "小紫老師": {
-    "2026-06-07": [{ title: "兒童創意素描",  time: "14:00–15:30", studio: "A" }],
-    "2026-06-08": [{ title: "親子藝術探索",  time: "14:00–15:30", studio: "B" }],
-    "2026-06-14": [{ title: "兒童創意素描",  time: "14:00–15:30", studio: "A" }],
-    "2026-06-15": [{ title: "親子藝術探索",  time: "14:00–15:30", studio: "B" }],
-    "2026-06-21": [{ title: "兒童創意素描",  time: "14:00–15:30", studio: "A" }],
-    "2026-06-22": [{ title: "親子藝術探索",  time: "14:00–15:30", studio: "B" }],
-    "2026-06-28": [{ title: "兒童創意素描",  time: "14:00–15:30", studio: "A" }],
-    "2026-06-29": [{ title: "親子藝術探索",  time: "14:00–15:30", studio: "B" }],
-  },
-  "明德老師": {
-    "2026-06-06": [{ title: "基礎水彩入門",  time: "10:00–12:00", studio: "A" }],
-    "2026-06-07": [{ title: "成人油畫工作坊", time: "19:00–21:00", studio: "B" }],
-    "2026-06-10": [{ title: "水墨入門體驗",  time: "19:00–21:00", studio: "C" }],
-    "2026-06-13": [{ title: "基礎水彩入門",  time: "10:00–12:00", studio: "A" }],
-    "2026-06-14": [{ title: "成人油畫工作坊", time: "19:00–21:00", studio: "B" }],
-    "2026-06-17": [{ title: "水墨入門體驗",  time: "19:00–21:00", studio: "C" }],
-    "2026-06-20": [{ title: "基礎水彩入門",  time: "10:00–12:00", studio: "A" }],
-    "2026-06-21": [{ title: "成人油畫工作坊", time: "19:00–21:00", studio: "B" }],
-    "2026-06-24": [{ title: "水墨入門體驗",  time: "19:00–21:00", studio: "C" }],
-    "2026-06-27": [{ title: "基礎水彩入門",  time: "10:00–12:00", studio: "A" }],
-    "2026-06-28": [{ title: "成人油畫工作坊", time: "19:00–21:00", studio: "B" }],
-  },
-}
-
 const WEEKDAYS_SHORT = ["日","一","二","三","四","五","六"]
 function tpad(n: number) { return String(n).padStart(2,"0") }
 function dkey(y: number, m: number, d: number) { return `${y}-${tpad(m+1)}-${tpad(d)}` }
 
-function TeacherScheduleModal({ name, onClose }: { name: string; onClose: () => void }) {
-  const [year, setYear] = useState(2026)
-  const [month, setMonth] = useState(5)
+function TeacherScheduleModal({ teacher, courses, classrooms, onClose }: {
+  teacher: TeacherRef
+  courses: Course[]
+  classrooms: ClassroomRef[]
+  onClose: () => void
+}) {
+  const now = new Date()
+  const [year, setYear] = useState(now.getFullYear())
+  const [month, setMonth] = useState(now.getMonth())
   const [sel, setSel] = useState<string | null>(null)
-  const schedule = TEACHER_SCHEDULE[name] ?? {}
+
+  const roomName = useMemo(() => Object.fromEntries(classrooms.map(c => [c.id, c.name])), [classrooms])
+  const schedule = useMemo(() => mergeMonthEvents(
+    courses
+      .filter(c => c.teacherIds.includes(teacher.id))
+      .map(c => expandScheduleToMonth(c.schedule, c.title, c.classroomId ? (roomName[c.classroomId] ?? "") : "", year, month))
+  ), [courses, teacher.id, roomName, year, month])
+
   const firstDay = new Date(year, month, 1).getDay()
   const daysInMonth = new Date(year, month + 1, 0).getDate()
   const cells: (number | null)[] = [...Array(firstDay).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)]
@@ -162,7 +129,7 @@ function TeacherScheduleModal({ name, onClose }: { name: string; onClose: () => 
   function prev() { if (month === 0) { setYear(y => y-1); setMonth(11) } else setMonth(m => m-1); setSel(null) }
   function next() { if (month === 11) { setYear(y => y+1); setMonth(0)  } else setMonth(m => m+1); setSel(null) }
 
-  const selCourses = sel ? (schedule[sel] ?? []) : []
+  const selCourses: ScheduleEvent[] = sel ? (schedule[sel] ?? []) : []
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" onClick={onClose}>
@@ -172,7 +139,7 @@ function TeacherScheduleModal({ name, onClose }: { name: string; onClose: () => 
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#f0f0f0] shrink-0">
           <div>
-            <p className="text-sm font-medium">{name} 的課表</p>
+            <p className="text-sm font-medium">{teacher.name} 的課表</p>
           </div>
           <button onClick={onClose} className="text-[#bbb] hover:text-black"><X size={18} /></button>
         </div>
@@ -226,7 +193,7 @@ function TeacherScheduleModal({ name, onClose }: { name: string; onClose: () => 
                 <div key={i} className="flex items-center justify-between px-4 py-3 border-t first:border-t-0 border-[#f5f5f5]">
                   <div>
                     <p className="text-sm font-medium">{c.title}</p>
-                    <p className="text-xs text-[#999] mt-0.5">{c.time} · Studio {c.studio}</p>
+                    <p className="text-xs text-[#999] mt-0.5">{c.time}{c.extra ? ` · ${c.extra}` : ""}</p>
                   </div>
                 </div>
               ))}
@@ -237,12 +204,6 @@ function TeacherScheduleModal({ name, onClose }: { name: string; onClose: () => 
     </div>
   )
 }
-const STUDIOS = ["A", "B", "C"]
-const TICKET_TYPES = ["通用課堂券", "兒童課堂券", "成人課堂券", "體驗券"]
-const UNITS = [
-  { name: "大安國小", subUnits: [{ name: "美術班", location: "美術教室" }, { name: "一年甲班", location: "活動中心" }, { name: "二年甲班", location: "體育館" }] },
-  { name: "社區發展協會", subUnits: [{ name: "長青班", location: "社區活動中心" }, { name: "親子班", location: "工作坊" }] },
-]
 
 const statusStyle: Record<string, string> = {
   "開課中": "bg-black text-white",
@@ -279,52 +240,58 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 const inputCls = "w-full px-3 py-2.5 text-sm bg-[#fafaf9] border border-[#f0f0f0] rounded-xl outline-none focus:border-black focus:bg-white transition-colors"
 
 const EMPTY_FORM = {
-  title: "", types: ["內部"] as ("內部" | "外部")[], teachers: [] as string[],
+  title: "", types: ["內部"] as ("內部" | "外部")[], teacherIds: [] as string[],
   scheduleType: "固定週期" as "固定週期" | "單堂課",
   scheduleDay: "", scheduleDate: "", scheduleStart: "10:00", scheduleEnd: "12:00",
   status: "草稿" as Course["status"],
-  studio: "A", enrolled: 0, capacity: 10, ticketTypes: [] as string[], visible: true,
+  classroomId: "", enrolled: 0, capacity: 10, ticketTypes: [] as string[], visible: true,
   imgSquare: "", imgLandscape: "",
-  partner: "", subUnit: "", location: "", notes: "",
+  unitId: "", subUnit: "", location: "", notes: "",
   desc: "", highlights: "",
 }
 
 // ── Teacher multi-select (with schedule modal) ───────
 
-function TeacherMultiSelect({ selected, onChange }: {
+function TeacherMultiSelect({ teachers, courses, classrooms, selected, onChange }: {
+  teachers: TeacherRef[]
+  courses: Course[]
+  classrooms: ClassroomRef[]
   selected: string[]
   onChange: (v: string[]) => void
 }) {
   const [open, setOpen] = useState(false)
-  const [scheduleFor, setScheduleFor] = useState<string | null>(null)
+  const [scheduleFor, setScheduleFor] = useState<TeacherRef | null>(null)
 
-  function toggle(o: string) {
-    onChange(selected.includes(o) ? selected.filter(s => s !== o) : [...selected, o])
+  function toggle(id: string) {
+    onChange(selected.includes(id) ? selected.filter(s => s !== id) : [...selected, id])
   }
+
+  const selectedNames = teachers.filter(t => selected.includes(t.id)).map(t => t.name)
 
   return (
     <>
       <div className="relative">
         <button type="button" onClick={() => setOpen(v => !v)}
           className="w-full px-3 py-2.5 text-sm bg-[#fafaf9] border border-[#f0f0f0] rounded-xl outline-none text-left flex items-center justify-between hover:border-black transition-colors">
-          <span className={selected.length === 0 ? "text-[#bbb]" : ""}>
-            {selected.length === 0 ? "選擇教師…" : selected.join("、")}
+          <span className={selectedNames.length === 0 ? "text-[#bbb]" : ""}>
+            {selectedNames.length === 0 ? "選擇教師…" : selectedNames.join("、")}
           </span>
           <ChevronRight size={14} className={`text-[#bbb] transition-transform ${open ? "rotate-90" : ""}`} />
         </button>
         {open && (
           <div className="absolute z-20 mt-1 w-full bg-white border border-[#f0f0f0] rounded-xl shadow-lg overflow-hidden">
             <div className="max-h-48 overflow-y-auto">
-              {TEACHERS.map(o => (
-                <div key={o} className="flex items-center px-4 py-2.5 hover:bg-[#f9f9f9] transition-colors">
-                  <button type="button" onClick={() => toggle(o)} className="flex items-center gap-3 flex-1 text-left text-sm">
-                    <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${selected.includes(o) ? "bg-black border-black" : "border-[#ddd]"}`}>
-                      {selected.includes(o) && <svg width="9" height="7" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3.5 6L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+              {teachers.length === 0 && <p className="px-4 py-3 text-sm text-[#ccc]">尚無教師，請先到教師管理新增</p>}
+              {teachers.map(t => (
+                <div key={t.id} className="flex items-center px-4 py-2.5 hover:bg-[#f9f9f9] transition-colors">
+                  <button type="button" onClick={() => toggle(t.id)} className="flex items-center gap-3 flex-1 text-left text-sm">
+                    <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${selected.includes(t.id) ? "bg-black border-black" : "border-[#ddd]"}`}>
+                      {selected.includes(t.id) && <svg width="9" height="7" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3.5 6L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                     </span>
-                    {o}
+                    {t.name}
                   </button>
                   <button type="button"
-                    onClick={e => { e.stopPropagation(); setScheduleFor(o); setOpen(false) }}
+                    onClick={e => { e.stopPropagation(); setScheduleFor(t); setOpen(false) }}
                     className="text-[#bbb] hover:text-black transition-colors ml-2 shrink-0 flex items-center gap-1 text-[11px]">
                     <CalendarDays size={13} />課表
                   </button>
@@ -338,7 +305,7 @@ function TeacherMultiSelect({ selected, onChange }: {
           </div>
         )}
       </div>
-      {scheduleFor && <TeacherScheduleModal name={scheduleFor} onClose={() => setScheduleFor(null)} />}
+      {scheduleFor && <TeacherScheduleModal teacher={scheduleFor} courses={courses} classrooms={classrooms} onClose={() => setScheduleFor(null)} />}
     </>
   )
 }
@@ -415,18 +382,55 @@ function EnrollBar({ enrolled, capacity }: { enrolled: number; capacity: number 
 }
 
 export default function CoursesPage() {
-  const [courses, setCourses] = useState<Course[]>(INITIAL_COURSES)
+  const supabase = useMemo(() => createClient(), [])
+  const [courses, setCourses] = useState<Course[]>([])
+  const [teachers, setTeachers] = useState<TeacherRef[]>([])
+  const [classrooms, setClassrooms] = useState<ClassroomRef[]>([])
+  const [unitOptions, setUnitOptions] = useState<UnitRef[]>([])
+  const [ticketOptions, setTicketOptions] = useState<string[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [query, setQuery] = useState("")
   const [drawer, setDrawer] = useState<"add" | "edit" | null>(null)
   const [editing, setEditing] = useState<Course | null>(null)
   const [form, setForm] = useState(EMPTY_FORM)
-  const [nextId, setNextId] = useState(20)
   const [attendCourse, setAttendCourse] = useState<Course | null>(null)
-  const [attendance, setAttendance] = useState<Record<number, Session[]>>(ATTENDANCE_DATA)
+  const [sessions, setSessions] = useState<Session[]>([])
   const [sessionIdx, setSessionIdx] = useState(0)
   const [newName, setNewName] = useState("")
 
-  const internal = courses.filter(c => c.types.includes("內部"))
-  const external = courses.filter(c => c.types.includes("外部"))
+  useEffect(() => {
+    Promise.all([
+      supabase.from("courses").select("*, course_teachers(teacher_id)").order("created_at"),
+      supabase.from("teachers").select("id, name").order("created_at"),
+      supabase.from("classrooms").select("id, name").order("created_at"),
+      supabase.from("units").select("id, name, sub_units").order("created_at"),
+      supabase.from("products").select("name").eq("active", true).order("sort_order"),
+    ]).then(([cRes, tRes, roomRes, uRes, pRes]) => {
+      if (cRes.error) console.error("載入課程失敗:", cRes.error.message)
+      else setCourses((cRes.data as CourseRow[]).map(fromRow))
+      setTeachers((tRes.data ?? []) as TeacherRef[])
+      setClassrooms((roomRes.data ?? []) as ClassroomRef[])
+      setUnitOptions(((uRes.data ?? []) as { id: string; name: string; sub_units: { name: string; location: string }[] }[])
+        .map(u => ({ id: u.id, name: u.name, subUnits: Array.isArray(u.sub_units) ? u.sub_units : [] })))
+      setTicketOptions(((pRes.data ?? []) as { name: string }[]).map(p => p.name))
+      setLoading(false)
+    })
+  }, [supabase])
+
+  const teacherName = useMemo(() => Object.fromEntries(teachers.map(t => [t.id, t.name])), [teachers])
+  const roomName = useMemo(() => Object.fromEntries(classrooms.map(c => [c.id, c.name])), [classrooms])
+  const unitName = useMemo(() => Object.fromEntries(unitOptions.map(u => [u.id, u.name])), [unitOptions])
+
+  function names(c: Course) { return c.teacherIds.map(id => teacherName[id]).filter(Boolean).join("、") }
+  function studioOf(c: Course) { return c.classroomId ? (roomName[c.classroomId] ?? "—") : "—" }
+  function partnerOf(c: Course) { return c.unitId ? (unitName[c.unitId] ?? "—") : "—" }
+
+  const matched = courses.filter(c =>
+    !query.trim() || c.title.includes(query.trim()) || names(c).includes(query.trim())
+  )
+  const internal = matched.filter(c => c.types.includes("內部"))
+  const external = matched.filter(c => c.types.includes("外部"))
 
   function handleImageChange(key: "imgSquare" | "imgLandscape", e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -442,12 +446,12 @@ export default function CoursesPage() {
     setEditing(c)
     const parsed = parseSchedule(c.schedule)
     setForm({
-      title: c.title, types: c.types, teachers: c.teachers,
+      title: c.title, types: c.types, teacherIds: c.teacherIds,
       ...parsed,
       status: c.status,
-      studio: c.studio ?? "A", enrolled: c.enrolled ?? 0, capacity: c.capacity ?? 10, ticketTypes: c.ticketTypes ?? [], visible: c.visible,
+      classroomId: c.classroomId ?? "", enrolled: c.enrolled ?? 0, capacity: c.capacity ?? 10, ticketTypes: c.ticketTypes ?? [], visible: c.visible,
       imgSquare: c.imgSquare ?? "", imgLandscape: c.imgLandscape ?? "",
-      partner: c.partner ?? "", subUnit: c.subUnit ?? "", location: c.location ?? "", notes: c.notes ?? "",
+      unitId: c.unitId ?? "", subUnit: c.subUnit ?? "", location: c.location ?? "", notes: c.notes ?? "",
       desc: c.desc ?? "", highlights: (c.highlights ?? []).join("\n"),
     })
     setDrawer("edit")
@@ -463,86 +467,156 @@ export default function CoursesPage() {
     })
   }
 
-  function saveAdd() {
-    if (!form.title.trim()) return
-    const c: Course = {
-      id: nextId, title: form.title, types: form.types, teachers: form.teachers,
-      schedule: buildSchedule(form), status: form.status, visible: form.visible,
-      ...(form.types.includes("內部") ? { studio: form.studio, enrolled: form.enrolled, capacity: form.capacity, ticketTypes: form.ticketTypes } : {}),
-      ...(form.types.includes("外部") ? { partner: form.partner, subUnit: form.subUnit, location: form.location } : {}),
-      notes: form.notes,
-      desc: form.desc,
+  async function buildRow() {
+    const [coverUrl, bannerUrl] = await Promise.all([
+      uploadImage(supabase, form.imgSquare, "courses"),
+      uploadImage(supabase, form.imgLandscape, "courses"),
+    ])
+    const isInternal = form.types.includes("內部")
+    const isExternal = form.types.includes("外部")
+    return {
+      title: form.title.trim(),
+      types: form.types,
+      schedule: buildSchedule(form),
+      status: form.status,
+      visible: form.visible,
+      classroom_id: isInternal && form.classroomId ? form.classroomId : null,
+      enrolled: isInternal ? form.enrolled : 0,
+      capacity: isInternal ? form.capacity : 0,
+      ticket_types: isInternal ? form.ticketTypes : [],
+      unit_id: isExternal && form.unitId ? form.unitId : null,
+      sub_unit: isExternal ? (form.subUnit || null) : null,
+      location: isExternal ? (form.location || null) : null,
+      notes: form.notes || null,
+      description: form.desc || null,
       highlights: form.highlights.split("\n").map(s => s.trim()).filter(Boolean),
+      cover_url: coverUrl || null,
+      banner_url: bannerUrl || null,
     }
-    setCourses(prev => [...prev, c])
-    setNextId(n => n + 1)
-    close()
   }
 
-  function saveEdit() {
-    if (!editing) return
-    setCourses(prev => prev.map(c => c.id === editing.id ? {
-      ...c, title: form.title, types: form.types, teachers: form.teachers,
-      schedule: buildSchedule(form), status: form.status, visible: form.visible,
-      studio: form.studio, enrolled: form.enrolled, capacity: form.capacity, ticketTypes: form.ticketTypes,
-      partner: form.partner, subUnit: form.subUnit, location: form.location, notes: form.notes,
-      desc: form.desc,
-      highlights: form.highlights.split("\n").map(s => s.trim()).filter(Boolean),
-    } : c))
-    close()
+  async function syncTeachers(courseId: string, teacherIds: string[]) {
+    await supabase.from("course_teachers").delete().eq("course_id", courseId)
+    if (teacherIds.length > 0) {
+      const { error } = await supabase.from("course_teachers")
+        .insert(teacherIds.map(tid => ({ course_id: courseId, teacher_id: tid })))
+      if (error) throw new Error(error.message)
+    }
   }
 
-  function deleteCourse(id: number) {
+  async function saveAdd() {
+    if (!form.title.trim() || saving) return
+    setSaving(true)
+    try {
+      const row = await buildRow()
+      const { data, error } = await supabase.from("courses").insert(row).select().single()
+      if (error) throw new Error(error.message)
+      await syncTeachers((data as CourseRow).id, form.teacherIds)
+      setCourses(prev => [...prev, { ...fromRow(data as CourseRow), teacherIds: form.teacherIds }])
+      close()
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "新增失敗")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function saveEdit() {
+    if (!editing || saving) return
+    setSaving(true)
+    try {
+      const row = await buildRow()
+      const { error } = await supabase.from("courses").update(row).eq("id", editing.id)
+      if (error) throw new Error(error.message)
+      await syncTeachers(editing.id, form.teacherIds)
+      setCourses(prev => prev.map(c => c.id === editing.id ? {
+        ...c, title: row.title, types: row.types as Course["types"], teacherIds: form.teacherIds,
+        schedule: row.schedule, status: row.status, visible: row.visible,
+        classroomId: row.classroom_id, enrolled: row.enrolled, capacity: row.capacity, ticketTypes: row.ticket_types,
+        unitId: row.unit_id, subUnit: row.sub_unit ?? "", location: row.location ?? "", notes: row.notes ?? "",
+        desc: row.description ?? "", highlights: row.highlights,
+        imgSquare: row.cover_url ?? "", imgLandscape: row.banner_url ?? "",
+      } : c))
+      close()
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "儲存失敗")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function deleteCourse(id: string) {
+    if (!confirm("確定刪除此課程？")) return
+    const { error } = await supabase.from("courses").delete().eq("id", id)
+    if (error) { alert(`刪除失敗：${error.message}`); return }
     setCourses(prev => prev.filter(c => c.id !== id))
     close()
   }
 
-  function openAttend(c: Course) {
+  // ── 點名（course_attendance）──
+
+  async function openAttend(c: Course) {
     setAttendCourse(c)
     setSessionIdx(0)
     setNewName("")
-    if (!attendance[c.id]) {
-      setAttendance(prev => ({ ...prev, [c.id]: [] }))
-    }
+    const { data, error } = await supabase
+      .from("course_attendance")
+      .select("id, date, records")
+      .eq("course_id", c.id)
+      .order("date", { ascending: false })
+    if (error) { alert(`載入出席紀錄失敗：${error.message}`); return }
+    setSessions((data ?? []) as Session[])
   }
 
-  function closeAttend() { setAttendCourse(null) }
+  function closeAttend() { setAttendCourse(null); setSessions([]) }
 
-  function addSession(courseId: number) {
+  async function addSession(courseId: string) {
     const today = new Date()
     const date = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, "0")}/${String(today.getDate()).padStart(2, "0")}`
-    setAttendance(prev => ({
-      ...prev,
-      [courseId]: [{ date, records: [] }, ...(prev[courseId] ?? [])],
-    }))
+    const { data, error } = await supabase
+      .from("course_attendance")
+      .insert({ course_id: courseId, date, records: [] })
+      .select("id, date, records")
+      .single()
+    if (error) { alert(`新增課堂失敗：${error.message}`); return }
+    setSessions(prev => [data as Session, ...prev])
     setSessionIdx(0)
   }
 
-  function setStatus(courseId: number, sidx: number, name: string, status: AttendRecord["status"]) {
-    setAttendance(prev => {
-      const sessions = prev[courseId] ? [...prev[courseId]] : []
-      const session = { ...sessions[sidx], records: sessions[sidx].records.map(r => r.name === name ? { ...r, status } : r) }
-      sessions[sidx] = session
-      return { ...prev, [courseId]: sessions }
+  async function persistRecords(sessionId: string, records: AttendRecord[]) {
+    const { error } = await supabase.from("course_attendance").update({ records }).eq("id", sessionId)
+    if (error) alert(`儲存出席狀態失敗：${error.message}`)
+  }
+
+  function setStatus(sidx: number, name: string, status: AttendRecord["status"]) {
+    setSessions(prev => {
+      const next = [...prev]
+      const records = next[sidx].records.map(r => r.name === name ? { ...r, status } : r)
+      next[sidx] = { ...next[sidx], records }
+      persistRecords(next[sidx].id, records)
+      return next
     })
   }
 
-  function addRecord(courseId: number, sidx: number) {
+  function addRecord(sidx: number) {
     if (!newName.trim()) return
-    setAttendance(prev => {
-      const sessions = prev[courseId] ? [...prev[courseId]] : []
-      const session = { ...sessions[sidx], records: [...sessions[sidx].records, { name: newName.trim(), status: "出席" as const }] }
-      sessions[sidx] = session
-      return { ...prev, [courseId]: sessions }
+    setSessions(prev => {
+      const next = [...prev]
+      const records = [...next[sidx].records, { name: newName.trim(), status: "出席" as const }]
+      next[sidx] = { ...next[sidx], records }
+      persistRecords(next[sidx].id, records)
+      return next
     })
     setNewName("")
   }
 
-  function removeRecord(courseId: number, sidx: number, name: string) {
-    setAttendance(prev => {
-      const sessions = [...(prev[courseId] ?? [])]
-      sessions[sidx] = { ...sessions[sidx], records: sessions[sidx].records.filter(r => r.name !== name) }
-      return { ...prev, [courseId]: sessions }
+  function removeRecord(sidx: number, name: string) {
+    setSessions(prev => {
+      const next = [...prev]
+      const records = next[sidx].records.filter(r => r.name !== name)
+      next[sidx] = { ...next[sidx], records }
+      persistRecords(next[sidx].id, records)
+      return next
     })
   }
 
@@ -560,7 +634,7 @@ export default function CoursesPage() {
 
       <div className="relative mb-5">
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#bbb]" />
-        <input placeholder="搜尋課程名稱 / 教師…"
+        <input placeholder="搜尋課程名稱 / 教師…" value={query} onChange={e => setQuery(e.target.value)}
           className="w-full pl-9 pr-4 py-2.5 text-sm bg-white border border-[#f0f0f0] rounded-xl outline-none focus:border-black" />
       </div>
 
@@ -579,7 +653,8 @@ export default function CoursesPage() {
               <span>課程</span><span>教師</span><span>時間</span><span>教室</span><span>報名</span><span>狀態</span><span></span>
             </div>
             <div className="divide-y divide-[#f9f9f9]">
-              {internal.length === 0 && <p className="px-5 py-4 text-sm text-[#ccc]">尚無內部課程</p>}
+              {loading && <p className="px-5 py-4 text-sm text-[#ccc]">載入中…</p>}
+              {!loading && internal.length === 0 && <p className="px-5 py-4 text-sm text-[#ccc]">尚無內部課程</p>}
               {internal.map((c) => (
                 <div key={c.id} className="grid grid-cols-[2fr_1fr_2fr_0.6fr_1.2fr_0.8fr_auto] gap-4 items-center px-5 py-4">
                   <div className="flex items-center gap-1.5 min-w-0">
@@ -587,9 +662,9 @@ export default function CoursesPage() {
                     {c.types.includes("外部") && <span className="text-[10px] bg-[#e8f4fd] text-[#1a6fa8] px-1.5 py-0.5 rounded-full shrink-0">外部</span>}
                     {!c.visible && <span className="text-[10px] bg-[#f5f5f5] text-[#bbb] px-1.5 py-0.5 rounded-full shrink-0">隱藏</span>}
                   </div>
-                  <p className="text-sm text-[#666]">{c.teachers.join("、")}</p>
+                  <p className="text-sm text-[#666]">{names(c)}</p>
                   <p className="text-xs text-[#999]">{c.schedule}</p>
-                  <p className="text-xs text-[#999]">Studio {c.studio}</p>
+                  <p className="text-xs text-[#999]">{studioOf(c)}</p>
                   <EnrollBar enrolled={c.enrolled ?? 0} capacity={c.capacity ?? 0} />
                   <span className={`text-[11px] px-2.5 py-1 rounded-full w-fit ${statusStyle[c.status]}`}>{c.status}</span>
                   <button onClick={() => openEdit(c)} className="text-xs text-[#999] hover:text-black">編輯</button>
@@ -600,7 +675,8 @@ export default function CoursesPage() {
 
           {/* Mobile */}
           <div className="md:hidden divide-y divide-[#f9f9f9]">
-            {internal.length === 0 && <p className="px-5 py-4 text-sm text-[#ccc]">尚無內部課程</p>}
+            {loading && <p className="px-5 py-4 text-sm text-[#ccc]">載入中…</p>}
+            {!loading && internal.length === 0 && <p className="px-5 py-4 text-sm text-[#ccc]">尚無內部課程</p>}
             {internal.map((c) => (
               <div key={c.id} className="p-4">
                 <div className="flex items-start justify-between gap-2 mb-1.5">
@@ -611,7 +687,7 @@ export default function CoursesPage() {
                   </div>
                   <span className={`text-[11px] px-2.5 py-1 rounded-full shrink-0 ${statusStyle[c.status]}`}>{c.status}</span>
                 </div>
-                <p className="text-xs text-[#999]">{c.teachers.join("、")} · Studio {c.studio} · {c.schedule}</p>
+                <p className="text-xs text-[#999]">{names(c)} · {studioOf(c)} · {c.schedule}</p>
                 <div className="flex items-center gap-2 mt-3">
                   <EnrollBar enrolled={c.enrolled ?? 0} capacity={c.capacity ?? 0} />
                   <button onClick={() => openEdit(c)} className="text-xs text-[#999] hover:text-black ml-1">編輯</button>
@@ -634,7 +710,7 @@ export default function CoursesPage() {
               <span>課程</span><span>教師</span><span>時間</span><span>合作單位</span><span>地點</span><span>狀態</span><span></span>
             </div>
             <div className="divide-y divide-[#f9f9f9]">
-              {external.length === 0 && <p className="px-5 py-4 text-sm text-[#ccc]">尚無外部課程</p>}
+              {!loading && external.length === 0 && <p className="px-5 py-4 text-sm text-[#ccc]">尚無外部課程</p>}
               {external.map((c) => (
                 <div key={c.id} className="grid grid-cols-[2fr_1fr_2fr_1.5fr_1.5fr_0.8fr_auto] gap-4 items-center px-5 py-4">
                   <div className="flex items-center gap-1.5 min-w-0">
@@ -642,9 +718,9 @@ export default function CoursesPage() {
                     {c.types.includes("內部") && <span className="text-[10px] bg-[#f0f0f0] text-[#555] px-1.5 py-0.5 rounded-full shrink-0">內部</span>}
                     {!c.visible && <span className="text-[10px] bg-[#f5f5f5] text-[#bbb] px-1.5 py-0.5 rounded-full shrink-0">隱藏</span>}
                   </div>
-                  <p className="text-sm text-[#666]">{c.teachers.join("、")}</p>
+                  <p className="text-sm text-[#666]">{names(c)}</p>
                   <p className="text-xs text-[#999]">{c.schedule}</p>
-                  <p className="text-xs text-[#666] truncate">{c.partner ?? "—"}</p>
+                  <p className="text-xs text-[#666] truncate">{partnerOf(c)}</p>
                   <p className="text-xs text-[#999] truncate">
                     {[c.subUnit, c.location].filter(Boolean).join(" · ") || "—"}
                   </p>
@@ -662,7 +738,7 @@ export default function CoursesPage() {
 
           {/* Mobile */}
           <div className="md:hidden divide-y divide-[#f9f9f9]">
-            {external.length === 0 && <p className="px-5 py-4 text-sm text-[#ccc]">尚無外部課程</p>}
+            {!loading && external.length === 0 && <p className="px-5 py-4 text-sm text-[#ccc]">尚無外部課程</p>}
             {external.map((c) => (
               <div key={c.id} className="p-4">
                 <div className="flex items-start justify-between gap-2 mb-1.5">
@@ -673,11 +749,11 @@ export default function CoursesPage() {
                   </div>
                   <span className={`text-[11px] px-2.5 py-1 rounded-full shrink-0 ${statusStyle[c.status]}`}>{c.status}</span>
                 </div>
-                <p className="text-xs text-[#999]">{c.teachers.join("、")} · {c.schedule}</p>
+                <p className="text-xs text-[#999]">{names(c)} · {c.schedule}</p>
                 <div className="flex gap-4 mt-2">
                   <div>
                     <p className="text-[10px] text-[#bbb]">合作單位</p>
-                    <p className="text-xs text-[#666] mt-0.5">{c.partner ?? "—"}</p>
+                    <p className="text-xs text-[#666] mt-0.5">{partnerOf(c)}</p>
                   </div>
                   <div>
                     <p className="text-[10px] text-[#bbb]">地點</p>
@@ -726,8 +802,11 @@ export default function CoursesPage() {
 
               <Field label="教師">
                 <TeacherMultiSelect
-                  selected={form.teachers}
-                  onChange={v => setForm(f => ({ ...f, teachers: v }))}
+                  teachers={teachers}
+                  courses={courses}
+                  classrooms={classrooms}
+                  selected={form.teacherIds}
+                  onChange={v => setForm(f => ({ ...f, teacherIds: v }))}
                 />
               </Field>
 
@@ -910,15 +989,16 @@ export default function CoursesPage() {
                   <p className="text-[11px] text-[#aaa] uppercase tracking-widest">內部課程設定</p>
 
                   <Field label="教室">
-                    <select value={form.studio} onChange={e => setForm(f => ({ ...f, studio: e.target.value }))}
+                    <select value={form.classroomId} onChange={e => setForm(f => ({ ...f, classroomId: e.target.value }))}
                       className={inputCls}>
-                      {STUDIOS.map(s => <option key={s}>Studio {s}</option>)}
+                      <option value="">請選擇教室…</option>
+                      {classrooms.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
                   </Field>
 
                   <Field label="可使用課堂券（可複選）">
                     <MultiSelect
-                      options={TICKET_TYPES}
+                      options={ticketOptions}
                       selected={form.ticketTypes}
                       onChange={v => setForm(f => ({ ...f, ticketTypes: v }))}
                       placeholder="選擇可用券別…"
@@ -947,16 +1027,16 @@ export default function CoursesPage() {
                   <p className="text-[11px] text-[#aaa] uppercase tracking-widest">外部課程設定</p>
 
                   <Field label="合作單位">
-                    <select value={form.partner}
-                      onChange={e => setForm(f => ({ ...f, partner: e.target.value, subUnit: "", location: "" }))}
+                    <select value={form.unitId}
+                      onChange={e => setForm(f => ({ ...f, unitId: e.target.value, subUnit: "", location: "" }))}
                       className={inputCls}>
                       <option value="">請選擇單位…</option>
-                      {UNITS.map(u => <option key={u.name} value={u.name}>{u.name}</option>)}
+                      {unitOptions.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                     </select>
                   </Field>
 
-                  {form.partner && (() => {
-                    const unit = UNITS.find(u => u.name === form.partner)
+                  {form.unitId && (() => {
+                    const unit = unitOptions.find(u => u.id === form.unitId)
                     if (!unit || unit.subUnits.length === 0) return null
                     return (
                       <>
@@ -1005,9 +1085,9 @@ export default function CoursesPage() {
               <button onClick={close} className="px-4 py-2 text-sm border border-[#f0f0f0] rounded-xl hover:border-black transition-colors">
                 取消
               </button>
-              <button onClick={drawer === "add" ? saveAdd : saveEdit}
-                className="px-5 py-2 text-sm bg-black text-white rounded-xl hover:bg-[#222] transition-colors">
-                {drawer === "add" ? "建立課程" : "儲存"}
+              <button onClick={drawer === "add" ? saveAdd : saveEdit} disabled={saving}
+                className="px-5 py-2 text-sm bg-black text-white rounded-xl hover:bg-[#222] disabled:opacity-50 transition-colors">
+                {saving ? "儲存中…" : drawer === "add" ? "建立課程" : "儲存"}
               </button>
             </div>
           </div>
@@ -1016,7 +1096,6 @@ export default function CoursesPage() {
 
       {/* ── 點名 Drawer ── */}
       {attendCourse && (() => {
-        const sessions = attendance[attendCourse.id] ?? []
         const session = sessions[sessionIdx]
         const present = session?.records.filter(r => r.status === "出席").length ?? 0
         const leave = session?.records.filter(r => r.status === "請假").length ?? 0
@@ -1028,7 +1107,7 @@ export default function CoursesPage() {
               {/* Course info */}
               <div>
                 <p className="text-base font-medium">{attendCourse.title}</p>
-                <p className="text-xs text-[#999] mt-0.5">{attendCourse.partner} · {attendCourse.teachers.join("、")}</p>
+                <p className="text-xs text-[#999] mt-0.5">{partnerOf(attendCourse)} · {names(attendCourse)}</p>
               </div>
 
               {/* Session nav */}
@@ -1082,7 +1161,7 @@ export default function CoursesPage() {
                       <p className="text-sm font-medium">{r.name}</p>
                       <div className="flex items-center gap-1.5">
                         {(["出席", "請假", "缺席"] as const).map(s => (
-                          <button key={s} onClick={() => setStatus(attendCourse.id, sessionIdx, r.name, s)}
+                          <button key={s} onClick={() => setStatus(sessionIdx, r.name, s)}
                             className={`text-[11px] px-2 py-1 rounded-lg transition-colors ${r.status === s
                                 ? s === "出席" ? "bg-black text-white"
                                   : s === "請假" ? "bg-[#f5f5f5] text-[#555]"
@@ -1092,7 +1171,7 @@ export default function CoursesPage() {
                             {s}
                           </button>
                         ))}
-                        <button onClick={() => removeRecord(attendCourse.id, sessionIdx, r.name)}
+                        <button onClick={() => removeRecord(sessionIdx, r.name)}
                           className="text-[#e0e0e0] hover:text-red-400 transition-colors ml-1">
                           <X size={13} />
                         </button>
@@ -1103,10 +1182,10 @@ export default function CoursesPage() {
                   {/* Add student inline */}
                   <div className="flex gap-2 mt-1">
                     <input value={newName} onChange={e => setNewName(e.target.value)}
-                      onKeyDown={e => e.key === "Enter" && addRecord(attendCourse.id, sessionIdx)}
+                      onKeyDown={e => e.key === "Enter" && addRecord(sessionIdx)}
                       placeholder="新增學員姓名…"
                       className="flex-1 px-3 py-2 text-sm bg-white border border-[#f0f0f0] rounded-xl outline-none focus:border-black transition-colors" />
-                    <button onClick={() => addRecord(attendCourse.id, sessionIdx)}
+                    <button onClick={() => addRecord(sessionIdx)}
                       className="px-3 py-2 bg-black text-white text-sm rounded-xl hover:bg-[#222] transition-colors">
                       <Plus size={14} />
                     </button>

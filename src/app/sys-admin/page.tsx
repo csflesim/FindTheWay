@@ -1,10 +1,17 @@
-import { TrendingUp, Users, BookOpen, Ticket } from "lucide-react"
+import { TrendingUp, TrendingDown, Users, UserCheck, BookOpen, Ticket, TicketCheck, UserCircle2 } from "lucide-react"
 
-const stats = [
-  { label: "本月課程",   value: "12",  sub: "+2 較上月",  icon: BookOpen,    up: true  },
-  { label: "本月收入",   value: "NT$48,600", sub: "+8% 較上月", icon: TrendingUp, up: true  },
-  { label: "活躍學員",   value: "63",  sub: "+5 較上月",  icon: Users,       up: true  },
-  { label: "課堂券在庫", value: "142", sub: "-12 本週",   icon: Ticket,      up: false },
+const memberStats = [
+  { label: "會員人數",   value: "128",  sub: "+3 較上月",  icon: UserCircle2, up: true  },
+  { label: "學員人數",   value: "214",  sub: "+7 較上月",  icon: UserCheck,   up: true  },
+  { label: "活躍學員",   value: "63",   sub: "+5 較上月",  icon: Users,       up: true  },
+  { label: "課堂券在庫", value: "142",  sub: "-12 本週",   icon: Ticket,      up: false },
+]
+
+const monthlyStats = [
+  { label: "本月課程",       value: "12",        sub: "+2 較上月",   icon: BookOpen,    up: true  },
+  { label: "本月收入",       value: "NT$48,600", sub: "+8% 較上月",  icon: TrendingUp,  up: true  },
+  { label: "本月退款",       value: "NT$1,200",  sub: "-3% 較上月",  icon: TrendingDown, up: true  },
+  { label: "本月使用課堂券", value: "38",        sub: "+6 較上月",   icon: TicketCheck, up: true  },
 ]
 
 const recentOrders = [
@@ -25,6 +32,19 @@ const statusStyle: Record<string, string> = {
   "待確認": "bg-[#f5f5f5] text-[#999]",
 }
 
+function StatCard({ label, value, sub, icon: Icon, up }: { label: string; value: string; sub: string; icon: React.ElementType; up: boolean }) {
+  return (
+    <div className="bg-white rounded-xl p-4 border border-[#f0f0f0]">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[11px] text-[#999]">{label}</span>
+        <Icon size={15} className="text-[#ccc]" strokeWidth={1.5} />
+      </div>
+      <p className="text-xl font-medium leading-none">{value}</p>
+      <p className={`text-[10px] mt-1.5 ${up ? "text-green-600" : "text-red-400"}`}>{sub}</p>
+    </div>
+  )
+}
+
 export default function AdminDashboard() {
   return (
     <div className="p-6 w-full">
@@ -33,18 +53,14 @@ export default function AdminDashboard() {
         <h1 className="text-xl font-medium mt-0.5">總覽</h1>
       </div>
 
-      {/* Stats */}
+      {/* 人數 & 庫存 */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+        {memberStats.map(s => <StatCard key={s.label} {...s} />)}
+      </div>
+
+      {/* 本月數字 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
-        {stats.map(({ label, value, sub, icon: Icon, up }) => (
-          <div key={label} className="bg-white rounded-xl p-4 border border-[#f0f0f0]">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-[11px] text-[#999]">{label}</span>
-              <Icon size={15} className="text-[#ccc]" strokeWidth={1.5} />
-            </div>
-            <p className="text-xl font-medium leading-none">{value}</p>
-            <p className={`text-[10px] mt-1.5 ${up ? "text-green-600" : "text-red-400"}`}>{sub}</p>
-          </div>
-        ))}
+        {monthlyStats.map(s => <StatCard key={s.label} {...s} />)}
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">

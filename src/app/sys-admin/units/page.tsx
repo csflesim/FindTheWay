@@ -1,44 +1,43 @@
 'use client'
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Search, Plus, X, Trash2, ChevronDown } from "lucide-react"
+import { createClient } from "@/lib/supabase/client"
 
 type SubUnit = { id: number; name: string; location: string }
 
 type Unit = {
-  id: number
+  id: string
   name: string
   type: string
   contact: string
   phone: string
   address: string
-  courses: string[]
   subUnits: SubUnit[]
   status: "合作中" | "已結束"
   notes?: string
 }
 
-const INITIAL_UNITS: Unit[] = [
-  {
-    id: 1, name: "大安國小", type: "學校", contact: "王主任", phone: "02-2701-1234", address: "台北市大安區",
-    courses: ["兒童水彩啟蒙"],
-    subUnits: [
-      { id: 1, name: "美術班",   location: "美術教室"  },
-      { id: 2, name: "一年甲班", location: "活動中心"  },
-      { id: 3, name: "二年甲班", location: "體育館"    },
-    ],
-    status: "合作中",
-  },
-  {
-    id: 2, name: "社區發展協會", type: "社區機構", contact: "林理事長", phone: "02-2345-5678", address: "台北市信義區",
-    courses: ["親子創意手作"],
-    subUnits: [
-      { id: 1, name: "長青班", location: "社區活動中心" },
-      { id: 2, name: "親子班", location: "工作坊"       },
-    ],
-    status: "合作中",
-  },
-]
+type UnitRow = {
+  id: string
+  name: string
+  type: string | null
+  contact: string | null
+  phone: string | null
+  address: string | null
+  status: "合作中" | "已結束"
+  sub_units: SubUnit[]
+  notes: string | null
+}
+
+function fromRow(r: UnitRow): Unit {
+  return {
+    id: r.id, name: r.name, type: r.type ?? "", contact: r.contact ?? "",
+    phone: r.phone ?? "", address: r.address ?? "", status: r.status,
+    subUnits: Array.isArray(r.sub_units) ? r.sub_units : [],
+    notes: r.notes ?? "",
+  }
+}
 
 function Drawer({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
@@ -77,17 +76,47 @@ const EMPTY_FORM: FormState = {
   status: "合作中", notes: "", subUnits: [],
 }
 
+function formToRow(form: FormState) {
+  return {
+    name: form.name.trim(),
+    type: form.type || null,
+    contact: form.contact || null,
+    phone: form.phone || null,
+    address: form.address || null,
+    status: form.status,
+    sub_units: form.subUnits,
+    notes: form.notes || null,
+  }
+}
+
 export default function UnitsPage() {
-  const [units, setUnits]       = useState<Unit[]>(INITIAL_UNITS)
-  const [expanded, setExpanded] = useState<Set<number>>(() => new Set(INITIAL_UNITS.map(u => u.id)))
+  const supabase = useMemo(() => createClient(), [])
+  const [units, setUnits]       = useState<Unit[]>([])
+  const [loading, setLoading]   = useState(true)
+  const [saving, setSaving]     = useState(false)
+  const [query, setQuery]       = useState("")
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [drawer, setDrawer]     = useState<"add" | "edit" | null>(null)
   const [editing, setEditing]   = useState<Unit | null>(null)
   const [form, setForm]         = useState<FormState>(EMPTY_FORM)
-  const [nextId, setNextId]     = useState(10)
   const [newName, setNewName]   = useState("")
   const [newLoc,  setNewLoc]    = useState("")
 
-  function toggleExpand(id: number) {
+  useEffect(() => {
+    supabase.from("units").select("*").order("created_at").then(({ data, error }) => {
+      if (error) { console.error("載入單位失敗:", error.message); setLoading(false); return }
+      const list = (data as UnitRow[]).map(fromRow)
+      setUnits(list)
+      setExpanded(new Set(list.map(u => u.id)))
+      setLoading(false)
+    })
+  }, [supabase])
+
+  const filtered = units.filter(u =>
+    !query.trim() || u.name.includes(query.trim()) || u.contact.includes(query.trim())
+  )
+
+  function toggleExpand(id: string) {
     setExpanded(prev => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id); else next.add(id)
@@ -124,20 +153,30 @@ export default function UnitsPage() {
     setForm(f => ({ ...f, subUnits: f.subUnits.filter(s => s.id !== id) }))
   }
 
-  function saveAdd() {
-    if (!form.name.trim()) return
-    setUnits(prev => [...prev, { id: nextId, ...form, courses: [] }])
-    setNextId(n => n + 1)
+  async function saveAdd() {
+    if (!form.name.trim() || saving) return
+    setSaving(true)
+    const { data, error } = await supabase.from("units").insert(formToRow(form)).select().single()
+    setSaving(false)
+    if (error) { alert(`新增失敗：${error.message}`); return }
+    setUnits(prev => [...prev, fromRow(data as UnitRow)])
     close()
   }
 
-  function saveEdit() {
-    if (!editing) return
+  async function saveEdit() {
+    if (!editing || saving) return
+    setSaving(true)
+    const { error } = await supabase.from("units").update(formToRow(form)).eq("id", editing.id)
+    setSaving(false)
+    if (error) { alert(`儲存失敗：${error.message}`); return }
     setUnits(prev => prev.map(u => u.id === editing.id ? { ...u, ...form } : u))
     close()
   }
 
-  function deleteUnit(id: number) {
+  async function deleteUnit(id: string) {
+    if (!confirm("確定刪除此單位？")) return
+    const { error } = await supabase.from("units").delete().eq("id", id)
+    if (error) { alert(`刪除失敗：${error.message}`); return }
     setUnits(prev => prev.filter(u => u.id !== id))
     close()
   }
@@ -156,7 +195,7 @@ export default function UnitsPage() {
 
       <div className="relative mb-5">
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#bbb]" />
-        <input placeholder="搜尋單位名稱 / 聯絡人…"
+        <input placeholder="搜尋單位名稱 / 聯絡人…" value={query} onChange={e => setQuery(e.target.value)}
           className="w-full pl-9 pr-4 py-2.5 text-sm bg-white border border-[#f0f0f0] rounded-xl outline-none focus:border-black" />
       </div>
 
@@ -166,8 +205,9 @@ export default function UnitsPage() {
           <span></span><span>單位</span><span>類型</span><span>聯絡人</span><span>電話</span><span>狀態</span><span></span>
         </div>
         <div className="divide-y divide-[#f5f5f5]">
-          {units.length === 0 && <p className="px-5 py-4 text-sm text-[#ccc]">尚無單位</p>}
-          {units.map((u) => (
+          {loading && <p className="px-5 py-4 text-sm text-[#ccc]">載入中…</p>}
+          {!loading && filtered.length === 0 && <p className="px-5 py-4 text-sm text-[#ccc]">尚無單位</p>}
+          {filtered.map((u) => (
             <div key={u.id}>
               {/* Main row */}
               <div className="grid grid-cols-[28px_1.5fr_0.8fr_1fr_1.2fr_0.8fr_auto] gap-4 items-center px-5 py-4">
@@ -181,9 +221,9 @@ export default function UnitsPage() {
                   </div>
                   <p className="text-sm font-medium truncate">{u.name}</p>
                 </div>
-                <span className="text-[11px] bg-[#f5f5f5] text-[#666] px-2 py-0.5 rounded-full w-fit">{u.type}</span>
-                <p className="text-xs text-[#666]">{u.contact}</p>
-                <p className="text-xs text-[#999]">{u.phone}</p>
+                <span className="text-[11px] bg-[#f5f5f5] text-[#666] px-2 py-0.5 rounded-full w-fit">{u.type || "—"}</span>
+                <p className="text-xs text-[#666]">{u.contact || "—"}</p>
+                <p className="text-xs text-[#999]">{u.phone || "—"}</p>
                 <span className={`text-[11px] px-2.5 py-1 rounded-full w-fit ${
                   u.status === "合作中" ? "bg-black text-white" : "bg-[#f5f5f5] text-[#999]"
                 }`}>{u.status}</span>
@@ -215,7 +255,8 @@ export default function UnitsPage() {
 
       {/* Mobile cards */}
       <div className="md:hidden flex flex-col gap-3">
-        {units.map((u) => (
+        {loading && <p className="text-sm text-[#ccc]">載入中…</p>}
+        {filtered.map((u) => (
           <div key={u.id} className="bg-white rounded-xl border border-[#f0f0f0] overflow-hidden">
             <div className="flex items-center gap-2 px-4 pt-4 pb-3">
               <button onClick={() => toggleExpand(u.id)} className="text-[#bbb] hover:text-black transition-colors shrink-0">
@@ -227,7 +268,7 @@ export default function UnitsPage() {
                 </div>
                 <div className="min-w-0">
                   <p className="text-sm font-medium">{u.name}</p>
-                  <p className="text-xs text-[#aaa]">{u.type} · {u.contact}</p>
+                  <p className="text-xs text-[#aaa]">{[u.type, u.contact].filter(Boolean).join(" · ") || "—"}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
@@ -366,9 +407,9 @@ export default function UnitsPage() {
               <button onClick={close} className="px-4 py-2 text-sm border border-[#f0f0f0] rounded-xl hover:border-black transition-colors">
                 取消
               </button>
-              <button onClick={drawer === "add" ? saveAdd : saveEdit}
-                className="px-5 py-2 text-sm bg-black text-white rounded-xl hover:bg-[#222] transition-colors">
-                {drawer === "add" ? "建立單位" : "儲存"}
+              <button onClick={drawer === "add" ? saveAdd : saveEdit} disabled={saving}
+                className="px-5 py-2 text-sm bg-black text-white rounded-xl hover:bg-[#222] disabled:opacity-50 transition-colors">
+                {saving ? "儲存中…" : drawer === "add" ? "建立單位" : "儲存"}
               </button>
             </div>
           </div>

@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { ChevronLeft, ChevronRight } from "lucide-react"
+import { ChevronLeft, ChevronRight, Bell, X, AlertCircle, Info, Clock } from "lucide-react"
 import { useAvailability, type Block } from "./context/AvailabilityProvider"
 
 type ViewMode = 'list' | 'day' | 'week' | 'month'
@@ -26,6 +26,55 @@ const allCourses = [
   { id: 10, title: "成人油畫工作坊", dateStr: "2026-06-27", time: "19:00–21:00", studio: "B", enrolled: 5,  capacity: 8  },
   { id: 11, title: "基礎水彩入門",  dateStr: "2026-06-28", time: "10:00–12:00", studio: "A", enrolled: 7,  capacity: 10 },
 ]
+
+// ── Notice bar ────────────────────────────────────────────────
+type NoticeLevel = "urgent" | "reminder" | "info"
+type Notice = { id: number; level: NoticeLevel; text: string; href?: string }
+
+const MOCK_NOTICES: Notice[] = [
+  { id: 1, level: "urgent",   text: "今天 19:00 成人油畫工作坊 尚未點名",   href: "/m/teacher/attendance?id=5" },
+  { id: 2, level: "reminder", text: "明天 14:00 兒童創意素描（Studio A）", href: "/m/teacher" },
+  { id: 3, level: "info",     text: "排班確認截止 6/15，請盡早更新可排時間", href: "/m/teacher/availability" },
+]
+
+const NOTICE_STYLE: Record<NoticeLevel, { bg: string; icon: React.ElementType; iconColor: string }> = {
+  urgent:   { bg: "bg-red-50 border-red-100",    icon: AlertCircle, iconColor: "text-red-500"    },
+  reminder: { bg: "bg-amber-50 border-amber-100", icon: Clock,       iconColor: "text-amber-500"  },
+  info:     { bg: "bg-blue-50 border-blue-100",   icon: Info,        iconColor: "text-blue-500"   },
+}
+
+function NoticeBar() {
+  const [dismissed, setDismissed] = useState<Set<number>>(new Set())
+  const visible = MOCK_NOTICES.filter(n => !dismissed.has(n.id))
+
+  if (visible.length === 0) return null
+
+  return (
+    <div className="px-3 pt-2 pb-1 flex flex-col gap-1.5">
+      {visible.map(n => {
+        const { bg, icon: Icon, iconColor } = NOTICE_STYLE[n.level]
+        return (
+          <div key={n.id} className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs ${bg}`}>
+            <Icon size={13} className={`${iconColor} shrink-0`} />
+            {n.href ? (
+              <Link href={n.href} className="flex-1 leading-snug hover:underline underline-offset-2 line-clamp-1">
+                {n.text}
+              </Link>
+            ) : (
+              <span className="flex-1 leading-snug line-clamp-1">{n.text}</span>
+            )}
+            <button
+              onClick={() => setDismissed(prev => new Set([...prev, n.id]))}
+              className="shrink-0 text-[#bbb] hover:text-[#777] transition-colors -mr-0.5"
+            >
+              <X size={13} />
+            </button>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
 
 // ── date helpers ──────────────────────────────────────────────
 function toDateStr(y: number, m: number, d: number) {
@@ -449,13 +498,22 @@ export default function TeacherCoursesPage() {
     setMonthSelectedDate(prev => prev === ds ? null : ds)
   }
 
+  const unread = MOCK_NOTICES.length
+
   return (
     <div>
       <header className="sticky top-0 bg-white/90 backdrop-blur-sm border-b border-[#ebebeb] px-5 py-3 z-10">
         <div className="flex items-center justify-between">
-          <div>
-            <p className="text-[10px] text-[#aaa] tracking-widest uppercase">Teacher</p>
-            <h1 className="text-sm font-medium leading-tight">我的課程</h1>
+          <div className="flex items-center gap-2">
+            <div>
+              <p className="text-[10px] text-[#aaa] tracking-widest uppercase">Teacher</p>
+              <h1 className="text-sm font-medium leading-tight">我的課程</h1>
+            </div>
+            {unread > 0 && (
+              <span className="flex items-center justify-center w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full leading-none">
+                {unread}
+              </span>
+            )}
           </div>
           {/* View switcher */}
           <div className="flex bg-[#f2f2f2] rounded-lg p-0.5 gap-0.5">
@@ -470,6 +528,8 @@ export default function TeacherCoursesPage() {
           </div>
         </div>
       </header>
+
+      <NoticeBar />
 
       {view === "list"  && <ListView />}
       {view === "day"   && <DayView dateStr={selectedDate} blocks={blocks} onNavigate={setSelectedDate} />}

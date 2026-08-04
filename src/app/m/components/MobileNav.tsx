@@ -3,18 +3,37 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Home, BookOpen, MonitorPlay, ScrollText, User } from "lucide-react"
+import { useState, useEffect } from "react"
 
-const tabs = [
-  { href: "/m",               label: "首頁",  icon: Home },
-  { href: "/m/courses",       label: "線下課", icon: BookOpen },
-  { href: "/m/online-courses", label: "線上課", icon: MonitorPlay },
-  { href: "/m/orders",        label: "訂單",  icon: ScrollText },
-  { href: "/m/profile",       label: "我的",  icon: User },
+const PARAMS_KEY = "ftw.params.v1"
+
+const ALL_TABS = [
+  { href: "/m",               label: "首頁",  icon: Home,        feature: null },
+  { href: "/m/courses",       label: "實體課", icon: BookOpen,    feature: null },
+  { href: "/m/online-courses", label: "線上課", icon: MonitorPlay, feature: "onlineCourse" },
+  { href: "/m/orders",        label: "訂單",  icon: ScrollText,  feature: null },
+  { href: "/m/profile",       label: "我的",  icon: User,        feature: null },
 ]
 
 export default function MobileNav() {
   const pathname = usePathname()
+  const [onlineCourse, setOnlineCourse] = useState(true)
+
+  useEffect(() => {
+    try {
+      const s = localStorage.getItem(PARAMS_KEY)
+      if (s) {
+        const p = JSON.parse(s)
+        if (p.features && typeof p.features.onlineCourse === "boolean") {
+          setOnlineCourse(p.features.onlineCourse)
+        }
+      }
+    } catch {}
+  }, [])
+
   if (pathname.startsWith("/m/teacher")) return null
+
+  const tabs = ALL_TABS.filter(t => t.feature !== "onlineCourse" || onlineCourse)
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#ebebeb] z-50 safe-area-inset-bottom">

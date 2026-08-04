@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getLineConfig } from "@/lib/line-config"
+import { createServerClient } from "@supabase/ssr"
+import { getLineLoginConfig } from "@/lib/line-config"
 import { exchangeLineToken, getLineProfile } from "@/lib/line"
+import { createAdminClient } from "@/lib/supabase/admin"
 
 const BASE = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000"
 
@@ -14,7 +16,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL("/m/login?error=invalid_state", BASE))
   }
 
-  const config = getLineConfig()
+  const config = getLineLoginConfig()
   const redirectUri = `${BASE}/api/auth/line/callback`
 
   try {
@@ -31,21 +33,95 @@ export async function GET(req: NextRequest) {
     }
 
     const profile = await getLineProfile(tokenData.access_token)
+    const syntheticEmail = `line_${profile.userId}@findtheway.app`
 
-    const session = JSON.stringify({
-      lineUserId: profile.userId,
-      displayName: profile.displayName,
-      pictureUrl: profile.pictureUrl ?? "",
+    const admin = createAdminClient()
+
+    // --- Find or create Supabase auth user ---
+    let supabaseUid: string | undefined
+
+    const { data: created, error: createErr } = await admin.auth.admin.createUser({
+      email: syntheticEmail,
+      email_confirm: true,
+      user_metadata: {
+        line_user_id: profile.userId,
+        display_name: profile.displayName,
+        picture_url: profile.pictureUrl ?? "",
+      },
     })
 
-    const res = NextResponse.redirect(new URL("/m", BASE))
-    res.cookies.set("ftw_session", session, {
-      httpOnly: true,
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 60 * 24 * 30, // 30 days
+    if (!createErr) {
+      supabaseUid = created.user.id
+    } else {
+      // User already exists — scan by synthetic email (acceptable at workshop scale)
+      let page = 1
+      outer: while (true) {
+        const { data: list } = await admin.auth.admin.listUsers({ page, perPage: 1000 })
+        if (!list || list.users.length === 0) break
+        for (const u of list.users) {
+          if (u.email === syntheticEmail) {
+            supabaseUid = u.id
+            await admin.auth.admin.updateUserById(u.id, {
+              user_metadata: {
+                line_user_id: profile.userId,
+                display_name: profile.displayName,
+                picture_url: profile.pictureUrl ?? "",
+              },
+            })
+            break outer
+          }
+        }
+        if (list.users.length < 1000) break
+        page++
+      }
+    }
+
+    if (!supabaseUid) {
+      console.error("Cannot find or create Supabase user for LINE ID:", profile.userId)
+      return NextResponse.redirect(new URL("/m/login?error=line_failed", BASE))
+    }
+
+    // --- Generate a magic link token and exchange it for a real session ---
+    const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
+      type: "magiclink",
+      email: syntheticEmail,
     })
+
+    if (linkErr || !linkData?.properties?.hashed_token) {
+      console.error("generateLink error:", linkErr)
+      return NextResponse.redirect(new URL("/m/login?error=line_failed", BASE))
+    }
+
+    // Build response redirect first, then let the SSR client write session cookies onto it
+    const rawNext = req.cookies.get("line_next")?.value
+    const next = rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/m"
+    const res = NextResponse.redirect(new URL(next, BASE))
     res.cookies.delete("line_state")
+    res.cookies.delete("line_next")
+
+    const ssrClient = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() { return req.cookies.getAll() },
+          setAll(list) {
+            list.forEach(({ name, value, options }) => res.cookies.set(name, value, options))
+          },
+        },
+      },
+    )
+
+    const { error: verifyErr } = await ssrClient.auth.verifyOtp({
+      token_hash: linkData.properties.hashed_token,
+      type: "magiclink",
+    })
+
+    if (verifyErr) {
+      console.error("verifyOtp error:", verifyErr)
+      return NextResponse.redirect(new URL("/m/login?error=line_failed", BASE))
+    }
+
     return res
   } catch (err) {
     console.error("LINE callback error:", err)

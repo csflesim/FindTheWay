@@ -31,9 +31,9 @@
 /m                       首頁（Banner 輪播廣告圖 + 課程分類 + 課程卡列表）
 ├── /m/login             登入 / 註冊
 ├── /m/courses           課程列表（分類篩選 + 大圖課程卡）
-│   └── /m/courses/[id]  課程詳情（圖片、資訊卡、授課老師、介紹、重點、報名）
-├── /m/orders            訂單 & 課堂券（黑底餘額卡 + 報名紀錄）
-├── /m/profile           我的（Profile card + 快速操作 + 學員列表 + 選單）
+│   └── /m/courses/[id]  課程詳情（圖片、資訊卡、授課老師、介紹、重點、單堂直購報名）
+├── /m/orders            訂單 & 課堂券（讀 localStorage、待確認訂單可取消）
+├── /m/profile           我的（Profile card + 快速操作 + 學員列表含待審核 + 選單）
 ├── /m/settings          帳號設定（改名、密碼、通知 toggle、LINE 綁定）
 ├── /m/students          學員管理
 │   ├── /m/students/[id] 學員詳情
@@ -72,8 +72,9 @@
 │
 ├── [經營管理]
 │   ├── /sys-admin/tickets           商品管理（課堂券組合上下架）
-│   ├── /sys-admin/orders            訂單管理（訂單列表 + 狀態）
-│   ├── /sys-admin/vouchers          卡券管理
+│   ├── /sys-admin/orders            訂單管理（讀寫 localStorage、確認付款、取消、發起售後）
+│   ├── /sys-admin/aftersales        售後管理（唯讀歷史列表，從訂單管理發起）
+│   ├── /sys-admin/vouchers          卡券管理（讀 localStorage、含有效期限欄）
 │   └── /sys-admin/finance           帳務管理（收入統計 + 交易明細 + 日期篩選）
 │
 ├── [展示管理]
@@ -82,7 +83,7 @@
 └── [系統管理]
     ├── /sys-admin/system/members    人員管理（後台帳號 + 角色）
     ├── /sys-admin/system/roles      角色管理（權限矩陣）
-    └── /sys-admin/system/params     參數管理（分組可編輯參數）
+    └── /sys-admin/system/params     參數管理（上課時間 / 通知 / 付款 / 功能開關 / LINE登入 / LINE訊息 / SMTP）
 ```
 
 ---
@@ -115,7 +116,7 @@ Findtheway/
 │       │   ├── students/
 │       │   │   ├── page.tsx
 │       │   │   ├── [id]/page.tsx
-│       │   │   └── add/page.tsx
+│       │   │   └── add/page.tsx        # 送出申請→ftw.students.v1，需後台審核
 │       │   ├── tickets/
 │       │   │   ├── buy/page.tsx
 │       │   │   └── transfer/page.tsx
@@ -145,8 +146,9 @@ Findtheway/
 │           ├── classrooms/page.tsx
 │           ├── courses/page.tsx        # 含圖片上傳、課程介紹、課程重點
 │           ├── tickets/page.tsx
-│           ├── orders/page.tsx
-│           ├── vouchers/page.tsx
+│           ├── orders/page.tsx         # 讀寫 localStorage（ftw.orders.v1）
+│           ├── aftersales/page.tsx     # 唯讀售後歷史
+│           ├── vouchers/page.tsx       # 讀 localStorage，含有效期限欄
 │           ├── finance/page.tsx
 │           ├── roster/page.tsx         # 出席/缺席/延期
 │           ├── display/
@@ -154,11 +156,12 @@ Findtheway/
 │           ├── system/
 │           │   ├── members/page.tsx
 │           │   ├── roles/page.tsx
-│           │   └── params/page.tsx
+│           │   └── params/page.tsx     # 上課時間/通知/付款/功能開關/LINE登入/LINE訊息/SMTP
 │           ├── _lib/
-│           │   └── orders.tsx          # 訂單 mock（賴大紫帳號餘額）
+│           │   ├── orders.tsx          # 型別定義、INITIAL_ORDERS、輔助函式、OrderDetail 元件
+│           │   └── aftersales.tsx      # AfterSalesPanel 共用元件
 │           └── components/
-│               ├── AdminNav.tsx        # 響應式側欄（5 群組可摺疊）
+│               ├── AdminNav.tsx        # 響應式側欄（6 群組可摺疊，含售後管理）
 │               └── AdminShell.tsx
 └── public/
 ```

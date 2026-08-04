@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server"
 import crypto from "crypto"
-import { getLineConfig } from "@/lib/line-config"
+import { getLineLoginConfig } from "@/lib/line-config"
 import { buildLineAuthUrl } from "@/lib/line"
 
 const BASE = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000"
 
-export function GET() {
-  const config = getLineConfig()
+export function GET(req: Request) {
+  const config = getLineLoginConfig()
   if (!config.channelId) {
     return NextResponse.json(
       { error: "尚未設定 LINE Channel ID，請至後台「參數管理」填入。" },
@@ -25,5 +25,16 @@ export function GET() {
     maxAge: 300,
     path: "/",
   })
+
+  // 登入成功後要導回的頁面（僅允許站內路徑）
+  const next = new URL(req.url).searchParams.get("next")
+  if (next && next.startsWith("/") && !next.startsWith("//")) {
+    res.cookies.set("line_next", next, {
+      httpOnly: true,
+      sameSite: "lax",
+      maxAge: 300,
+      path: "/",
+    })
+  }
   return res
 }

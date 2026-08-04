@@ -15,6 +15,29 @@
   }
 }
 
+/* ── Workflow builder dark-glass UI ────────────────────────── */
+:root {
+  --glass-bg: rgba(18, 18, 24, 0.85);
+  --glass-border: rgba(255, 255, 255, 0.08);
+}
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+}
+.glass-input {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  color: #e4e4e7;
+  padding: 0.4rem 0.625rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.glass-input::placeholder { color: #52525b; }
+.glass-input:focus { border-color: rgba(139, 92, 246, 0.5); }
+
 .noise-overlay {
   position: absolute;
   top: 0;

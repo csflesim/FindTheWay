@@ -1,10 +1,12 @@
 'use client'
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Search, Plus, X, Trash2, CalendarDays, ChevronLeft, ChevronRight } from "lucide-react"
+import { createClient } from "@/lib/supabase/client"
+import { expandScheduleToMonth, mergeMonthEvents, type ScheduleEvent } from "@/lib/schedule"
 
 type Classroom = {
-  id: number
+  id: string
   name: string
   capacity: number
   equipment: string[]
@@ -12,48 +14,13 @@ type Classroom = {
   notes?: string
 }
 
-type RoomCourse = { title: string; time: string; teachers: string[] }
-type RoomScheduleMap = Record<string, RoomCourse[]>
-
-const scheduleByRoom: Record<string, RoomScheduleMap> = {
-  "Studio A": {
-    "2026-06-06": [{ title: "基礎水彩入門", time: "10:00–12:00", teachers: ["明德老師"] }],
-    "2026-06-07": [{ title: "兒童創意素描", time: "14:00–15:30", teachers: ["小紫老師"] }],
-    "2026-06-13": [{ title: "基礎水彩入門", time: "10:00–12:00", teachers: ["明德老師"] }],
-    "2026-06-14": [{ title: "兒童創意素描", time: "14:00–15:30", teachers: ["小紫老師"] }],
-    "2026-06-20": [{ title: "基礎水彩入門", time: "10:00–12:00", teachers: ["明德老師"] }],
-    "2026-06-21": [{ title: "兒童創意素描", time: "14:00–15:30", teachers: ["小紫老師"] }],
-    "2026-06-27": [{ title: "基礎水彩入門", time: "10:00–12:00", teachers: ["明德老師"] }],
-    "2026-06-28": [{ title: "兒童創意素描", time: "14:00–15:30", teachers: ["小紫老師"] }],
-  },
-  "Studio B": {
-    "2026-06-05": [{ title: "成人油畫工作坊", time: "19:00–21:00", teachers: ["明德老師"] }],
-    "2026-06-06": [{ title: "親子藝術探索",   time: "14:00–15:30", teachers: ["小紫老師"] }],
-    "2026-06-07": [{ title: "親子創意手作",   time: "10:00–12:00", teachers: ["小紫老師", "明德老師"] }],
-    "2026-06-12": [{ title: "成人油畫工作坊", time: "19:00–21:00", teachers: ["明德老師"] }],
-    "2026-06-13": [{ title: "親子藝術探索",   time: "14:00–15:30", teachers: ["小紫老師"] }],
-    "2026-06-14": [{ title: "親子創意手作",   time: "10:00–12:00", teachers: ["小紫老師", "明德老師"] }],
-    "2026-06-19": [{ title: "成人油畫工作坊", time: "19:00–21:00", teachers: ["明德老師"] }],
-    "2026-06-20": [{ title: "親子藝術探索",   time: "14:00–15:30", teachers: ["小紫老師"] }],
-    "2026-06-21": [{ title: "親子創意手作",   time: "10:00–12:00", teachers: ["小紫老師", "明德老師"] }],
-    "2026-06-26": [{ title: "成人油畫工作坊", time: "19:00–21:00", teachers: ["明德老師"] }],
-    "2026-06-27": [{ title: "親子藝術探索",   time: "14:00–15:30", teachers: ["小紫老師"] }],
-    "2026-06-28": [{ title: "親子創意手作",   time: "10:00–12:00", teachers: ["小紫老師", "明德老師"] }],
-  },
-  "Studio C": {
-    "2026-06-03": [{ title: "水墨入門體驗", time: "19:00–21:00", teachers: ["明德老師"] }],
-    "2026-06-10": [{ title: "水墨入門體驗", time: "19:00–21:00", teachers: ["明德老師"] }],
-    "2026-06-17": [{ title: "水墨入門體驗", time: "19:00–21:00", teachers: ["明德老師"] }],
-    "2026-06-24": [{ title: "水墨入門體驗", time: "19:00–21:00", teachers: ["明德老師"] }],
-  },
+type CourseLite = {
+  id: string
+  title: string
+  schedule: string
+  classroom_id: string | null
+  teachers: string[]
 }
-
-const INITIAL_CLASSROOMS: Classroom[] = [
-  { id: 1, name: "忙碌不迷路工作室", capacity: 20, equipment: [], status: "使用中" },
-  { id: 2, name: "Studio A", capacity: 10, equipment: ["畫架", "投影機", "白板"],   status: "使用中" },
-  { id: 3, name: "Studio B", capacity: 8,  equipment: ["畫架", "工作桌"],           status: "使用中" },
-  { id: 4, name: "Studio C", capacity: 8,  equipment: ["拉坯機", "窯爐", "工作桌"], status: "使用中" },
-]
 
 const WEEKDAYS   = ["日", "一", "二", "三", "四", "五", "六"]
 const MONTH_NAMES = ["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"]
@@ -61,12 +28,22 @@ const MONTH_NAMES = ["1月","2月","3月","4月","5月","6月","7月","8月","9�
 function pad(n: number) { return String(n).padStart(2, "0") }
 function dateKey(y: number, m: number, d: number) { return `${y}-${pad(m + 1)}-${pad(d)}` }
 
-function ClassroomCalendarModal({ room, onClose }: { room: Classroom; onClose: () => void }) {
-  const [year, setYear]   = useState(2026)
-  const [month, setMonth] = useState(5)
+function ClassroomCalendarModal({ room, courses, onClose }: {
+  room: Classroom
+  courses: CourseLite[]
+  onClose: () => void
+}) {
+  const now = new Date()
+  const [year, setYear]   = useState(now.getFullYear())
+  const [month, setMonth] = useState(now.getMonth())
   const [selected, setSelected] = useState<string | null>(null)
 
-  const schedule = scheduleByRoom[room.name] ?? {}
+  const schedule = useMemo(() => mergeMonthEvents(
+    courses
+      .filter(c => c.classroom_id === room.id)
+      .map(c => expandScheduleToMonth(c.schedule, c.title, c.teachers.join("、"), year, month))
+  ), [courses, room.id, year, month])
+
   const firstDay = new Date(year, month, 1).getDay()
   const daysInMonth = new Date(year, month + 1, 0).getDate()
   const cells: (number | null)[] = [
@@ -84,7 +61,7 @@ function ClassroomCalendarModal({ room, onClose }: { room: Classroom; onClose: (
     setSelected(null)
   }
 
-  const selectedCourses = selected ? (schedule[selected] ?? []) : []
+  const selectedCourses: ScheduleEvent[] = selected ? (schedule[selected] ?? []) : []
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -156,7 +133,7 @@ function ClassroomCalendarModal({ room, onClose }: { room: Classroom; onClose: (
                     <div key={i} className="flex items-center justify-between px-4 py-3">
                       <div>
                         <p className="text-sm font-medium">{c.title}</p>
-                        <p className="text-xs text-[#999] mt-0.5">{c.time} · {c.teachers.join("、")}</p>
+                        <p className="text-xs text-[#999] mt-0.5">{c.time}{c.extra ? ` · ${c.extra}` : ""}</p>
                       </div>
                       <span className="text-[11px] bg-black text-white px-2.5 py-1 rounded-full">已排課</span>
                     </div>
@@ -169,19 +146,18 @@ function ClassroomCalendarModal({ room, onClose }: { room: Classroom; onClose: (
           {/* Monthly list */}
           <div className="px-4 pb-5">
             <p className="text-[11px] text-[#aaa] uppercase tracking-widest mb-3">本月課程清單</p>
-            {Object.entries(schedule).filter(([k]) => k.startsWith(`${year}-${pad(month + 1)}`)).length === 0 ? (
+            {Object.keys(schedule).length === 0 ? (
               <p className="text-sm text-[#aaa]">本月無排課</p>
             ) : (
               <div className="flex flex-col gap-2">
                 {Object.entries(schedule)
-                  .filter(([k]) => k.startsWith(`${year}-${pad(month + 1)}`))
                   .sort(([a], [b]) => a.localeCompare(b))
                   .map(([k, courses]) => courses.map((c, ci) => (
                     <div key={`${k}-${ci}`} className="flex items-center justify-between bg-[#f9f9f9] rounded-xl px-4 py-3">
                       <div>
                         <p className="text-sm font-medium">{c.title}</p>
                         <p className="text-xs text-[#999] mt-0.5">
-                          {k.replace(/(\d{4})-(\d{2})-(\d{2})/, "$2/$3")} · {c.time} · {c.teachers.join("、")}
+                          {k.replace(/(\d{4})-(\d{2})-(\d{2})/, "$2/$3")} · {c.time}{c.extra ? ` · ${c.extra}` : ""}
                         </p>
                       </div>
                     </div>
@@ -242,14 +218,52 @@ const statusStyle: Record<Classroom["status"], string> = {
   "停用":   "bg-[#f5f5f5] text-[#999]",
 }
 
+type ClassroomRow = {
+  id: string
+  name: string
+  capacity: number
+  equipment: string[]
+  status: Classroom["status"]
+  notes: string | null
+}
+
 export default function ClassroomsPage() {
-  const [classrooms, setClassrooms]     = useState<Classroom[]>(INITIAL_CLASSROOMS)
+  const supabase = useMemo(() => createClient(), [])
+  const [classrooms, setClassrooms]     = useState<Classroom[]>([])
+  const [courses, setCourses]           = useState<CourseLite[]>([])
+  const [loading, setLoading]           = useState(true)
+  const [saving, setSaving]             = useState(false)
+  const [query, setQuery]               = useState("")
   const [calendarRoom, setCalendarRoom] = useState<Classroom | null>(null)
   const [drawer, setDrawer]             = useState<"add" | "edit" | null>(null)
   const [editing, setEditing]           = useState<Classroom | null>(null)
   const [form, setForm]                 = useState<FormState>(EMPTY_FORM)
-  const [nextId, setNextId]             = useState(10)
   const [newEquip, setNewEquip]         = useState("")
+
+  useEffect(() => {
+    Promise.all([
+      supabase.from("classrooms").select("*").order("created_at"),
+      supabase.from("courses").select("id, title, schedule, classroom_id, course_teachers(teacher:teachers(name))"),
+    ]).then(([roomsRes, coursesRes]) => {
+      if (roomsRes.error) console.error("載入教室失敗:", roomsRes.error.message)
+      else setClassrooms((roomsRes.data as ClassroomRow[]).map(r => ({
+        id: r.id, name: r.name, capacity: r.capacity,
+        equipment: Array.isArray(r.equipment) ? r.equipment : [],
+        status: r.status, notes: r.notes ?? "",
+      })))
+      if (coursesRes.error) console.error("載入課程失敗:", coursesRes.error.message)
+      else setCourses((coursesRes.data as unknown as {
+        id: string; title: string; schedule: string; classroom_id: string | null
+        course_teachers: { teacher: { name: string } | null }[]
+      }[]).map(c => ({
+        id: c.id, title: c.title, schedule: c.schedule, classroom_id: c.classroom_id,
+        teachers: c.course_teachers.map(ct => ct.teacher?.name).filter(Boolean) as string[],
+      })))
+      setLoading(false)
+    })
+  }, [supabase])
+
+  const filtered = classrooms.filter(c => !query.trim() || c.name.includes(query.trim()))
 
   function openAdd() {
     setForm(EMPTY_FORM); setNewEquip("")
@@ -275,19 +289,37 @@ export default function ClassroomsPage() {
     setForm(f => ({ ...f, equipment: f.equipment.filter(e => e !== item) }))
   }
 
-  function saveAdd() {
-    if (!form.name.trim()) return
+  function formToRow(f: FormState) {
+    return {
+      name: f.name.trim(),
+      capacity: parseInt(f.capacity) || 0,
+      equipment: f.equipment,
+      status: f.status,
+      notes: f.notes || null,
+    }
+  }
+
+  async function saveAdd() {
+    if (!form.name.trim() || saving) return
+    setSaving(true)
+    const { data, error } = await supabase.from("classrooms").insert(formToRow(form)).select().single()
+    setSaving(false)
+    if (error) { alert(`新增失敗：${error.message}`); return }
+    const r = data as ClassroomRow
     setClassrooms(prev => [...prev, {
-      id: nextId, name: form.name.trim(),
-      capacity: parseInt(form.capacity) || 0,
-      equipment: form.equipment, status: form.status, notes: form.notes,
+      id: r.id, name: r.name, capacity: r.capacity,
+      equipment: Array.isArray(r.equipment) ? r.equipment : [],
+      status: r.status, notes: r.notes ?? "",
     }])
-    setNextId(n => n + 1)
     close()
   }
 
-  function saveEdit() {
-    if (!editing) return
+  async function saveEdit() {
+    if (!editing || saving) return
+    setSaving(true)
+    const { error } = await supabase.from("classrooms").update(formToRow(form)).eq("id", editing.id)
+    setSaving(false)
+    if (error) { alert(`儲存失敗：${error.message}`); return }
     setClassrooms(prev => prev.map(c => c.id === editing.id ? {
       ...c, name: form.name, capacity: parseInt(form.capacity) || 0,
       equipment: form.equipment, status: form.status, notes: form.notes,
@@ -295,7 +327,10 @@ export default function ClassroomsPage() {
     close()
   }
 
-  function deleteClassroom(id: number) {
+  async function deleteClassroom(id: string) {
+    if (!confirm("確定刪除此教室？")) return
+    const { error } = await supabase.from("classrooms").delete().eq("id", id)
+    if (error) { alert(`刪除失敗：${error.message}`); return }
     setClassrooms(prev => prev.filter(c => c.id !== id))
     close()
   }
@@ -314,7 +349,7 @@ export default function ClassroomsPage() {
 
       <div className="relative mb-5">
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#bbb]" />
-        <input placeholder="搜尋教室名稱…"
+        <input placeholder="搜尋教室名稱…" value={query} onChange={e => setQuery(e.target.value)}
           className="w-full pl-9 pr-4 py-2.5 text-sm bg-white border border-[#f0f0f0] rounded-xl outline-none focus:border-black" />
       </div>
 
@@ -324,8 +359,9 @@ export default function ClassroomsPage() {
           <span>教室</span><span>容納人數</span><span>設備</span><span>狀態</span><span></span>
         </div>
         <div className="divide-y divide-[#f5f5f5]">
-          {classrooms.length === 0 && <p className="px-5 py-4 text-sm text-[#ccc]">尚無教室</p>}
-          {classrooms.map((c) => (
+          {loading && <p className="px-5 py-4 text-sm text-[#ccc]">載入中…</p>}
+          {!loading && filtered.length === 0 && <p className="px-5 py-4 text-sm text-[#ccc]">尚無教室</p>}
+          {filtered.map((c) => (
             <div key={c.id} className="grid grid-cols-[1.5fr_0.6fr_2.5fr_0.8fr_auto] gap-4 items-center px-5 py-4">
               <div className="flex items-center gap-2.5">
                 <div className="w-7 h-7 bg-[#f2f2f2] rounded-lg shrink-0 flex items-center justify-center text-[11px] text-[#999] font-medium">
@@ -355,7 +391,8 @@ export default function ClassroomsPage() {
 
       {/* Mobile cards */}
       <div className="md:hidden flex flex-col gap-3">
-        {classrooms.map((c) => (
+        {loading && <p className="text-sm text-[#ccc]">載入中…</p>}
+        {filtered.map((c) => (
           <div key={c.id} className="bg-white rounded-xl p-4 border border-[#f0f0f0]">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2.5">
@@ -387,7 +424,7 @@ export default function ClassroomsPage() {
 
       {/* ── Calendar Modal ── */}
       {calendarRoom && (
-        <ClassroomCalendarModal room={calendarRoom} onClose={() => setCalendarRoom(null)} />
+        <ClassroomCalendarModal room={calendarRoom} courses={courses} onClose={() => setCalendarRoom(null)} />
       )}
 
       {/* ── 新增 / 編輯 Drawer ── */}
@@ -469,9 +506,9 @@ export default function ClassroomsPage() {
               <button onClick={close} className="px-4 py-2 text-sm border border-[#f0f0f0] rounded-xl hover:border-black transition-colors">
                 取消
               </button>
-              <button onClick={drawer === "add" ? saveAdd : saveEdit}
-                className="px-5 py-2 text-sm bg-black text-white rounded-xl hover:bg-[#222] transition-colors">
-                {drawer === "add" ? "建立教室" : "儲存"}
+              <button onClick={drawer === "add" ? saveAdd : saveEdit} disabled={saving}
+                className="px-5 py-2 text-sm bg-black text-white rounded-xl hover:bg-[#222] disabled:opacity-50 transition-colors">
+                {saving ? "儲存中…" : drawer === "add" ? "建立教室" : "儲存"}
               </button>
             </div>
           </div>

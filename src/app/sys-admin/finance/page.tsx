@@ -1,78 +1,16 @@
 'use client'
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useMemo } from "react"
 import { TrendingUp, TrendingDown, HelpCircle, Plus, X } from "lucide-react"
-import { INITIAL_ORDERS, OrderDetail } from "../_lib/orders"
-
-const statCards = [
-  {
-    label: "收入",
-    value: "NT$48,600",
-    sub: "+8% 較上月",
-    up: true,
-    tip: "該區間所收的現金收入",
-  },
-  {
-    label: "退款",
-    value: "NT$1,200",
-    sub: "-2% 較上月",
-    up: true,
-    tip: "該區間所退款支出",
-  },
-  {
-    label: "淨收入",
-    value: "NT$47,400",
-    sub: "+9% 較上月",
-    up: true,
-    tip: "該區間的淨收入為開區間的：收入 － 退款",
-  },
-  {
-    label: "待收款",
-    value: "NT$5,500",
-    sub: "1 筆待確認",
-    up: false,
-    tip: "訂單已產生，尚未收款之金額",
-  },
-  {
-    label: "使用結算金額",
-    value: "NT$31,200",
-    sub: "+12% 較上月",
-    up: true,
-    tip: "每一張訂單金額會平均至每一張上課券當中，使用結算為該區間內實際服務所產生之帳務結算。",
-  },
-  {
-    label: "未使用餘額",
-    value: "NT$16,200",
-    sub: "區間終點未服務課券",
-    up: false,
-    tip: "每一張訂單金額會平均至每一張上課券當中，未使用餘額為該區間的終點時間時，尚未服務的課程券餘額。",
-  },
-]
-
-const monthlyRevenue = [
-  { month: "1月", amount: 32400 },
-  { month: "2月", amount: 28800 },
-  { month: "3月", amount: 38500 },
-  { month: "4月", amount: 41200 },
-  { month: "5月", amount: 44900 },
-  { month: "6月", amount: 48600 },
-]
+import { createClient } from "@/lib/supabase/client"
+import { Order, OrderRow, ORDER_SELECT, orderFromRow, OrderDetail } from "../_lib/orders"
 
 type TxType = "收入" | "退款"
 type TxStatus = "已入帳" | "待確認" | "已退款"
-type Transaction = { id: string; date: string; type: TxType; item: string; student: string; amount: number; status: TxStatus }
+type Transaction = { key: string; orderId: string | null; orderNo: string; date: string; type: TxType; item: string; student: string; amount: number; status: TxStatus }
 
-const INITIAL_TRANSACTIONS: Transaction[] = [
-  { id: "ORD-0041", date: "06/13", type: "收入", item: "10堂體驗包", student: "鄭大德", amount:   9800, status: "已入帳" },
-  { id: "ORD-0040", date: "06/12", type: "收入", item: "5堂精選包",  student: "賴大紫", amount:   5500, status: "已入帳" },
-  { id: "ORD-0039", date: "06/10", type: "收入", item: "單堂試課券", student: "鄭大德", amount:   1200, status: "已入帳" },
-  { id: "ORD-0038", date: "06/09", type: "收入", item: "10堂體驗包", student: "賴大紫", amount:   9800, status: "待確認" },
-  { id: "ORD-0037", date: "06/05", type: "收入", item: "10堂體驗包", student: "鄭大德", amount:   9800, status: "已入帳" },
-  { id: "ORD-0036", date: "06/01", type: "退款", item: "20堂年繳包", student: "賴大紫", amount: -18000, status: "已退款" },
-]
-
-const EMPTY_TX: Omit<Transaction, "id"> = {
-  date: "", type: "收入", item: "", student: "", amount: 0, status: "已入帳",
+const EMPTY_TX = {
+  date: "", type: "收入" as TxType, item: "", student: "", amount: 0, status: "已入帳" as TxStatus,
 }
 
 const statusStyle: Record<string, string> = {
@@ -81,7 +19,17 @@ const statusStyle: Record<string, string> = {
   "已退款": "bg-[#f5f5f5] text-[#999]",
 }
 
-const maxAmount = Math.max(...monthlyRevenue.map(m => m.amount))
+function pad(n: number) { return String(n).padStart(2, "0") }
+
+function firstOfMonth(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-01`
+}
+function endOfMonth(): string {
+  const d = new Date()
+  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(last)}`
+}
 
 function Tooltip({ text }: { text: string }) {
   const [open, setOpen] = useState(false)
@@ -117,26 +65,135 @@ function Tooltip({ text }: { text: string }) {
 }
 
 export default function FinancePage() {
-  const [from, setFrom] = useState("2026-06-01")
-  const [to,   setTo]   = useState("2026-06-30")
+  const supabase = useMemo(() => createClient(), [])
+  const [orders, setOrders] = useState<Order[]>([])
+  const [loading, setLoading] = useState(true)
+  const [from, setFrom] = useState(firstOfMonth())
+  const [to,   setTo]   = useState(endOfMonth())
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [transactions, setTransactions] = useState<Transaction[]>(INITIAL_TRANSACTIONS)
+  const [manualTx, setManualTx] = useState<Transaction[]>([])
   const [addOpen, setAddOpen] = useState(false)
-  const [form, setForm] = useState<Omit<Transaction, "id">>(EMPTY_TX)
+  const [form, setForm] = useState(EMPTY_TX)
 
-  const selectedOrder = selectedId ? INITIAL_ORDERS.find(o => o.id === selectedId) ?? null : null
+  useEffect(() => {
+    supabase.from("orders").select(ORDER_SELECT).order("created_at", { ascending: false })
+      .then(({ data, error }) => {
+        if (error) console.error("載入訂單失敗:", error.message)
+        else setOrders((data as unknown as OrderRow[]).map(orderFromRow))
+        setLoading(false)
+      })
+  }, [supabase])
+
+  // 區間內訂單
+  const inRange = useMemo(() => {
+    const fromTs = new Date(from + "T00:00:00").getTime()
+    const toTs   = new Date(to + "T23:59:59").getTime()
+    return orders.filter(o => {
+      const t = new Date(o.createdAt).getTime()
+      return t >= fromTs && t <= toTs
+    })
+  }, [orders, from, to])
+
+  // 由訂單推導交易明細
+  const transactions = useMemo<Transaction[]>(() => {
+    const list: Transaction[] = []
+    for (const o of inRange) {
+      if (o.payStatus === "已付款" || o.payStatus === "已售後") {
+        list.push({ key: `${o.id}-in`, orderId: o.id, orderNo: o.orderNo, date: o.date, type: "收入", item: o.item, student: o.student, amount: o.amount, status: "已入帳" })
+      }
+      if (o.payStatus === "待確認") {
+        list.push({ key: `${o.id}-pending`, orderId: o.id, orderNo: o.orderNo, date: o.date, type: "收入", item: o.item, student: o.student, amount: o.amount, status: "待確認" })
+      }
+      if (o.payStatus === "已售後" && o.afterSales) {
+        list.push({ key: `${o.id}-refund`, orderId: o.id, orderNo: o.orderNo, date: o.afterSales.processedAt?.split(" ")[0] ?? o.date, type: "退款", item: o.item, student: o.student, amount: -o.afterSales.refundAmount, status: "已退款" })
+      }
+    }
+    return [...manualTx, ...list]
+  }, [inRange, manualTx])
+
+  // 統計
+  const stats = useMemo(() => {
+    const income  = transactions.filter(t => t.type === "收入" && t.status === "已入帳").reduce((s, t) => s + t.amount, 0)
+    const refund  = transactions.filter(t => t.type === "退款").reduce((s, t) => s + Math.abs(t.amount), 0)
+    const pending = transactions.filter(t => t.status === "待確認").reduce((s, t) => s + t.amount, 0)
+    const pendingCount = transactions.filter(t => t.status === "待確認").length
+
+    // 課堂券結算：訂單金額均攤到每張券
+    let settled = 0, unusedBalance = 0
+    for (const o of inRange) {
+      if (o.payStatus !== "已付款" && o.payStatus !== "已售後") continue
+      if (o.tickets.length === 0) { settled += o.amount; continue }  // 單堂直購視為即時結算
+      const per = o.amount / o.qty
+      settled       += o.tickets.filter(t => t.status === "已使用").length * per
+      unusedBalance += o.tickets.filter(t => t.status === "未使用").length * per
+    }
+
+    return [
+      { label: "收入",   value: `NT$${income.toLocaleString()}`,  sub: `${transactions.filter(t => t.type === "收入" && t.status === "已入帳").length} 筆已入帳`, up: true,  tip: "該區間所收的現金收入" },
+      { label: "退款",   value: `NT$${refund.toLocaleString()}`,  sub: `${transactions.filter(t => t.type === "退款").length} 筆退款`, up: true, tip: "該區間所退款支出" },
+      { label: "淨收入", value: `NT$${(income - refund).toLocaleString()}`, sub: "收入 − 退款", up: true, tip: "該區間的淨收入為該區間的：收入 － 退款" },
+      { label: "待收款", value: `NT$${pending.toLocaleString()}`, sub: `${pendingCount} 筆待確認`, up: false, tip: "訂單已產生，尚未收款之金額" },
+      { label: "使用結算金額", value: `NT$${Math.round(settled).toLocaleString()}`, sub: "已服務課券結算", up: true, tip: "每一張訂單金額會平均至每一張上課券當中，使用結算為該區間內實際服務所產生之帳務結算。" },
+      { label: "未使用餘額", value: `NT$${Math.round(unusedBalance).toLocaleString()}`, sub: "區間終點未服務課券", up: false, tip: "每一張訂單金額會平均至每一張上課券當中，未使用餘額為該區間的終點時間時，尚未服務的課程券餘額。" },
+    ]
+  }, [transactions, inRange])
+
+  // 近六個月收入趨勢（全部訂單）
+  const monthlyRevenue = useMemo(() => {
+    const now = new Date()
+    const months: { key: string; month: string; amount: number }[] = []
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      months.push({ key: `${d.getFullYear()}-${pad(d.getMonth() + 1)}`, month: `${d.getMonth() + 1}月`, amount: 0 })
+    }
+    for (const o of orders) {
+      if (o.payStatus !== "已付款" && o.payStatus !== "已售後") continue
+      const d = new Date(o.createdAt)
+      const key = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`
+      const m = months.find(x => x.key === key)
+      if (m) m.amount += o.amount
+    }
+    return months
+  }, [orders])
+  const maxAmount = Math.max(1, ...monthlyRevenue.map(m => m.amount))
+
+  // 本月來源（依品項彙總）
+  const breakdown = useMemo(() => {
+    const map = new Map<string, number>()
+    let total = 0
+    for (const o of inRange) {
+      if (o.payStatus !== "已付款" && o.payStatus !== "已售後") continue
+      map.set(o.item, (map.get(o.item) ?? 0) + o.amount)
+      total += o.amount
+    }
+    return [...map.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, amount]) => ({ label, amount, pct: total > 0 ? Math.round(amount / total * 100) : 0 }))
+  }, [inRange])
+
+  const selectedOrder = selectedId ? orders.find(o => o.id === selectedId) ?? null : null
 
   function saveAdd() {
     if (!form.date || !form.item || !form.student || !form.amount) return
-    const newId = `MAN-${String(Date.now()).slice(-4)}`
     const amount = form.type === "退款" ? -Math.abs(form.amount) : Math.abs(form.amount)
-    setTransactions(list => [{ ...form, id: newId, amount }, ...list])
+    const [, m, d] = form.date.split("-")
+    setManualTx(list => [{
+      key: `manual-${list.length + 1}`, orderId: null, orderNo: "手動",
+      date: `${m}/${d}`, type: form.type, item: form.item, student: form.student, amount, status: form.status,
+    }, ...list])
     setAddOpen(false)
     setForm(EMPTY_TX)
   }
 
-  function setThisPeriod() { setFrom("2026-06-01"); setTo("2026-06-30") }
-  function setLastPeriod()  { setFrom("2026-05-01"); setTo("2026-05-31") }
+  function setThisPeriod() { setFrom(firstOfMonth()); setTo(endOfMonth()) }
+  function setLastPeriod() {
+    const d = new Date()
+    const y = d.getMonth() === 0 ? d.getFullYear() - 1 : d.getFullYear()
+    const m = d.getMonth() === 0 ? 12 : d.getMonth()
+    const last = new Date(y, m, 0).getDate()
+    setFrom(`${y}-${pad(m)}-01`)
+    setTo(`${y}-${pad(m)}-${pad(last)}`)
+  }
 
   return (
     <div className="p-4 md:p-6 w-full">
@@ -170,15 +227,12 @@ export default function FinancePage() {
             className="px-3 py-2 text-sm bg-white border border-[#f0f0f0] rounded-xl text-[#666] hover:border-black hover:text-black transition-colors">
             上期
           </button>
-          <button className="px-4 py-2 text-sm bg-black text-white rounded-xl hover:bg-[#222] transition-colors">
-            查詢
-          </button>
         </div>
       </div>
 
-      {/* Stat cards — 3 cols on md, 2 on sm */}
+      {/* Stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
-        {statCards.map(({ label, value, sub, up, tip }) => (
+        {stats.map(({ label, value, sub, up, tip }) => (
           <div key={label} className="bg-white rounded-xl p-4 border border-[#f0f0f0]">
             <div className="flex items-center justify-between mb-2">
               <p className="text-[11px] text-[#999]">{label}</p>
@@ -198,11 +252,11 @@ export default function FinancePage() {
         <div className="bg-white rounded-xl border border-[#f0f0f0] p-5">
           <p className="text-[11px] text-[#aaa] uppercase tracking-widest mb-4">月收入趨勢</p>
           <div className="flex items-end gap-2 h-36">
-            {monthlyRevenue.map((m) => {
+            {monthlyRevenue.map((m, i) => {
               const pct = Math.round((m.amount / maxAmount) * 100)
-              const isLatest = m.month === "6月"
+              const isLatest = i === monthlyRevenue.length - 1
               return (
-                <div key={m.month} className="flex-1 flex flex-col items-center gap-1.5">
+                <div key={m.key} className="flex-1 flex flex-col items-center gap-1.5">
                   <p className="text-[10px] text-[#999]">{(m.amount / 1000).toFixed(0)}k</p>
                   <div className="w-full rounded-t-md transition-all"
                     style={{ height: `${pct}%`, backgroundColor: isLatest ? "#000" : "#e8e8e8", minHeight: 4 }} />
@@ -215,14 +269,10 @@ export default function FinancePage() {
 
         {/* Income breakdown */}
         <div className="bg-white rounded-xl border border-[#f0f0f0] p-5">
-          <p className="text-[11px] text-[#aaa] uppercase tracking-widest mb-4">本月來源</p>
+          <p className="text-[11px] text-[#aaa] uppercase tracking-widest mb-4">本期來源</p>
           <div className="flex flex-col gap-3">
-            {[
-              { label: "單堂試課券", amount: 4800,  pct: 10 },
-              { label: "5堂精選包",  amount: 11000, pct: 23 },
-              { label: "10堂體驗包", amount: 29400, pct: 60 },
-              { label: "20堂年繳包", amount: 3400,  pct: 7  },
-            ].map(({ label, amount, pct }) => (
+            {breakdown.length === 0 && <p className="text-sm text-[#ccc]">本期尚無收入</p>}
+            {breakdown.map(({ label, amount, pct }) => (
               <div key={label}>
                 <div className="flex items-center justify-between mb-1">
                   <p className="text-xs text-[#666]">{label}</p>
@@ -253,8 +303,10 @@ export default function FinancePage() {
             <span>日期</span><span>類型</span><span>項目</span><span>學員</span><span>金額</span><span>訂單</span><span>狀態</span>
           </div>
           <div className="divide-y divide-[#f5f5f5]">
+            {loading && <p className="px-5 py-6 text-sm text-[#ccc]">載入中…</p>}
+            {!loading && transactions.length === 0 && <p className="px-5 py-6 text-sm text-[#ccc]">本期尚無交易</p>}
             {transactions.map((t) => (
-              <div key={t.id} className="grid grid-cols-[0.7fr_0.6fr_1.4fr_1.4fr_1fr_0.8fr_0.8fr] gap-4 items-center px-5 py-4">
+              <div key={t.key} className="grid grid-cols-[0.7fr_0.6fr_1.4fr_1.4fr_1fr_0.8fr_0.8fr] gap-4 items-center px-5 py-4">
                 <p className="text-xs text-[#999]">{t.date}</p>
                 <span className={`text-[11px] px-2 py-0.5 rounded-full w-fit ${
                   t.type === "收入" ? "bg-[#f0fdf4] text-green-700" : "bg-[#f5f5f5] text-[#999]"
@@ -264,10 +316,14 @@ export default function FinancePage() {
                 <p className={`text-sm font-medium ${t.amount < 0 ? "text-red-400" : ""}`}>
                   {t.amount < 0 ? "-" : ""}NT$ {Math.abs(t.amount).toLocaleString()}
                 </p>
-                <button
-                  onClick={() => setSelectedId(t.id)}
-                  className="text-xs text-black font-mono underline underline-offset-2 decoration-[#ccc] hover:decoration-black transition-colors text-left"
-                >{t.id}</button>
+                {t.orderId ? (
+                  <button
+                    onClick={() => setSelectedId(t.orderId)}
+                    className="text-xs text-black font-mono underline underline-offset-2 decoration-[#ccc] hover:decoration-black transition-colors text-left"
+                  >{t.orderNo}</button>
+                ) : (
+                  <span className="text-xs text-[#bbb]">{t.orderNo}</span>
+                )}
                 <span className={`text-[11px] px-2.5 py-1 rounded-full w-fit ${statusStyle[t.status]}`}>{t.status}</span>
               </div>
             ))}
@@ -276,17 +332,22 @@ export default function FinancePage() {
 
         {/* Mobile cards */}
         <div className="md:hidden flex flex-col gap-3">
+          {!loading && transactions.length === 0 && <p className="text-sm text-[#ccc] py-4">本期尚無交易</p>}
           {transactions.map((t) => (
-            <div key={t.id} className="bg-white rounded-xl p-4 border border-[#f0f0f0]">
+            <div key={t.key} className="bg-white rounded-xl p-4 border border-[#f0f0f0]">
               <div className="flex items-start justify-between gap-2 mb-1.5">
                 <div>
                   <p className="text-sm font-medium">{t.item}</p>
                   <p className="text-xs text-[#aaa] mt-0.5">
                     {t.student} ·{" "}
-                    <button
-                      onClick={() => setSelectedId(t.id)}
-                      className="font-mono underline underline-offset-2 decoration-[#ccc] hover:text-black hover:decoration-black transition-colors"
-                    >{t.id}</button>
+                    {t.orderId ? (
+                      <button
+                        onClick={() => setSelectedId(t.orderId)}
+                        className="font-mono underline underline-offset-2 decoration-[#ccc] hover:text-black hover:decoration-black transition-colors"
+                      >{t.orderNo}</button>
+                    ) : (
+                      <span className="font-mono">{t.orderNo}</span>
+                    )}
                   </p>
                 </div>
                 <span className={`text-[11px] px-2.5 py-1 rounded-full shrink-0 ${statusStyle[t.status]}`}>{t.status}</span>

@@ -1,10 +1,13 @@
 'use client'
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Search, Plus, X, ChevronLeft, ChevronRight, CalendarDays, Trash2, Upload } from "lucide-react"
+import { createClient } from "@/lib/supabase/client"
+import { uploadImage } from "@/lib/upload"
+import { expandScheduleToMonth, mergeMonthEvents, countMonthOccurrences, type ScheduleEvent } from "@/lib/schedule"
 
 type Teacher = {
-  id: number
+  id: string
   name: string
   specialty: string
   courses: number
@@ -16,41 +19,31 @@ type Teacher = {
   phone?: string
   bio?: string
   photo?: string
+  lineUserId?: string
 }
 
-const INITIAL_TEACHERS: Teacher[] = [
-  { id: 1, name: "小紫老師", specialty: "兒童創意・親子",  courses: 2, monthlyClasses: 8,  attendanceRate: 100, joined: "2023/06", status: "在職", email: "zico@findtheway.com",   phone: "0911-111-111", photo: "/image/purple.jpg" },
-  { id: 2, name: "明德老師", specialty: "水彩・水墨・油畫", courses: 3, monthlyClasses: 12, attendanceRate: 96,  joined: "2023/09", status: "在職", email: "mingdez@findtheway.com", phone: "0922-222-222", photo: "/image/mingdez.jpg" },
-]
-
-type Course = { title: string; time: string; studio: string }
-type ScheduleMap = Record<string, Course[]>
-
-const scheduleByTeacher: Record<number, ScheduleMap> = {
-  1: {
-    "2026-06-07": [{ title: "兒童創意素描",  time: "14:00–15:30", studio: "A" }],
-    "2026-06-08": [{ title: "親子藝術探索",  time: "14:00–15:30", studio: "B" }],
-    "2026-06-14": [{ title: "兒童創意素描",  time: "14:00–15:30", studio: "A" }],
-    "2026-06-15": [{ title: "親子藝術探索",  time: "14:00–15:30", studio: "B" }],
-    "2026-06-21": [{ title: "兒童創意素描",  time: "14:00–15:30", studio: "A" }],
-    "2026-06-22": [{ title: "親子藝術探索",  time: "14:00–15:30", studio: "B" }],
-    "2026-06-28": [{ title: "兒童創意素描",  time: "14:00–15:30", studio: "A" }],
-    "2026-06-29": [{ title: "親子藝術探索",  time: "14:00–15:30", studio: "B" }],
-  },
-  2: {
-    "2026-06-06": [{ title: "基礎水彩入門",  time: "10:00–12:00", studio: "A" }],
-    "2026-06-07": [{ title: "成人油畫工作坊", time: "19:00–21:00", studio: "B" }],
-    "2026-06-10": [{ title: "水墨入門體驗",  time: "19:00–21:00", studio: "C" }],
-    "2026-06-13": [{ title: "基礎水彩入門",  time: "10:00–12:00", studio: "A" }],
-    "2026-06-14": [{ title: "成人油畫工作坊", time: "19:00–21:00", studio: "B" }],
-    "2026-06-17": [{ title: "水墨入門體驗",  time: "19:00–21:00", studio: "C" }],
-    "2026-06-20": [{ title: "基礎水彩入門",  time: "10:00–12:00", studio: "A" }],
-    "2026-06-21": [{ title: "成人油畫工作坊", time: "19:00–21:00", studio: "B" }],
-    "2026-06-24": [{ title: "水墨入門體驗",  time: "19:00–21:00", studio: "C" }],
-    "2026-06-27": [{ title: "基礎水彩入門",  time: "10:00–12:00", studio: "A" }],
-    "2026-06-28": [{ title: "成人油畫工作坊", time: "19:00–21:00", studio: "B" }],
-  },
+type TeacherRow = {
+  id: string
+  name: string
+  specialty: string | null
+  email: string | null
+  phone: string | null
+  bio: string | null
+  photo_url: string | null
+  line_user_id: string | null
+  status: Teacher["status"]
+  created_at: string
 }
+
+type CourseLite = {
+  id: string
+  title: string
+  schedule: string
+  studio: string
+  teacherIds: string[]
+}
+
+type AttendanceLite = { course_id: string; records: { status: string }[] }
 
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"]
 const MONTH_NAMES = ["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"]
@@ -58,12 +51,22 @@ const MONTH_NAMES = ["1月","2月","3月","4月","5月","6月","7月","8月","9�
 function pad(n: number) { return String(n).padStart(2, "0") }
 function dateKey(y: number, m: number, d: number) { return `${y}-${pad(m+1)}-${pad(d)}` }
 
-function TeacherCalendarModal({ teacher, onClose }: { teacher: Teacher; onClose: () => void }) {
-  const [year, setYear]   = useState(2026)
-  const [month, setMonth] = useState(5)
+function TeacherCalendarModal({ teacher, courses, onClose }: {
+  teacher: Teacher
+  courses: CourseLite[]
+  onClose: () => void
+}) {
+  const now = new Date()
+  const [year, setYear]   = useState(now.getFullYear())
+  const [month, setMonth] = useState(now.getMonth())
   const [selected, setSelected] = useState<string | null>(null)
 
-  const schedule = scheduleByTeacher[teacher.id] ?? {}
+  const schedule = useMemo(() => mergeMonthEvents(
+    courses
+      .filter(c => c.teacherIds.includes(teacher.id))
+      .map(c => expandScheduleToMonth(c.schedule, c.title, c.studio, year, month))
+  ), [courses, teacher.id, year, month])
+
   const firstDay = new Date(year, month, 1).getDay()
   const daysInMonth = new Date(year, month + 1, 0).getDate()
   const cells: (number | null)[] = [
@@ -81,7 +84,7 @@ function TeacherCalendarModal({ teacher, onClose }: { teacher: Teacher; onClose:
     setSelected(null)
   }
 
-  const selectedCourses = selected ? (schedule[selected] ?? []) : []
+  const selectedCourses: ScheduleEvent[] = selected ? (schedule[selected] ?? []) : []
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -148,7 +151,7 @@ function TeacherCalendarModal({ teacher, onClose }: { teacher: Teacher; onClose:
                     <div key={i} className="flex items-center justify-between px-4 py-3">
                       <div>
                         <p className="text-sm font-medium">{c.title}</p>
-                        <p className="text-xs text-[#999] mt-0.5">{c.time} · Studio {c.studio}</p>
+                        <p className="text-xs text-[#999] mt-0.5">{c.time}{c.extra ? ` · ${c.extra}` : ""}</p>
                       </div>
                       <span className="text-[11px] bg-black text-white px-2.5 py-1 rounded-full">已排課</span>
                     </div>
@@ -160,18 +163,17 @@ function TeacherCalendarModal({ teacher, onClose }: { teacher: Teacher; onClose:
 
           <div className="px-4 pb-5">
             <p className="text-[11px] text-[#aaa] uppercase tracking-widest mb-3">本月課程清單</p>
-            {Object.entries(schedule).filter(([k]) => k.startsWith(`${year}-${pad(month + 1)}`)).length === 0 ? (
+            {Object.keys(schedule).length === 0 ? (
               <p className="text-sm text-[#aaa]">本月無排課</p>
             ) : (
               <div className="flex flex-col gap-2">
                 {Object.entries(schedule)
-                  .filter(([k]) => k.startsWith(`${year}-${pad(month + 1)}`))
                   .sort(([a], [b]) => a.localeCompare(b))
                   .map(([k, courses]) => courses.map((c, ci) => (
                     <div key={`${k}-${ci}`} className="flex items-center justify-between bg-[#f9f9f9] rounded-xl px-4 py-3">
                       <div>
                         <p className="text-sm font-medium">{c.title}</p>
-                        <p className="text-xs text-[#999] mt-0.5">{k.replace(/(\d{4})-(\d{2})-(\d{2})/, "$2/$3")} · {c.time} · Studio {c.studio}</p>
+                        <p className="text-xs text-[#999] mt-0.5">{k.replace(/(\d{4})-(\d{2})-(\d{2})/, "$2/$3")} · {c.time}{c.extra ? ` · ${c.extra}` : ""}</p>
                       </div>
                     </div>
                   )))
@@ -219,21 +221,70 @@ const statusStyle: Record<string, string> = {
   "離職":  "bg-[#f5f5f5] text-[#999]",
 }
 
-const EMPTY_FORM = { name: "", specialty: "", email: "", phone: "", bio: "", status: "在職" as Teacher["status"], photo: "" }
+const EMPTY_FORM = { name: "", specialty: "", email: "", phone: "", bio: "", status: "在職" as Teacher["status"], photo: "", lineUserId: "" }
 
 export default function TeachersPage() {
-  const [teachers, setTeachers]         = useState<Teacher[]>(INITIAL_TEACHERS)
+  const supabase = useMemo(() => createClient(), [])
+  const [teachers, setTeachers]         = useState<Teacher[]>([])
+  const [courses, setCourses]           = useState<CourseLite[]>([])
+  const [loading, setLoading]           = useState(true)
+  const [saving, setSaving]             = useState(false)
+  const [query, setQuery]               = useState("")
   const [calendarTeacher, setCalendar]  = useState<Teacher | null>(null)
   const [drawer, setDrawer]             = useState<"add" | "edit" | null>(null)
   const [editing, setEditing]           = useState<Teacher | null>(null)
   const [form, setForm]                 = useState(EMPTY_FORM)
-  const [nextId, setNextId]             = useState(10)
+
+  useEffect(() => {
+    const now = new Date()
+    Promise.all([
+      supabase.from("teachers").select("*").order("created_at"),
+      supabase.from("courses").select("id, title, schedule, classroom:classrooms(name), course_teachers(teacher_id)"),
+      supabase.from("course_attendance").select("course_id, records"),
+    ]).then(([tRes, cRes, aRes]) => {
+      if (cRes.error) console.error("載入課程失敗:", cRes.error.message)
+      const courseList: CourseLite[] = ((cRes.data ?? []) as unknown as {
+        id: string; title: string; schedule: string
+        classroom: { name: string } | null
+        course_teachers: { teacher_id: string }[]
+      }[]).map(c => ({
+        id: c.id, title: c.title, schedule: c.schedule,
+        studio: c.classroom?.name ?? "",
+        teacherIds: c.course_teachers.map(ct => ct.teacher_id),
+      }))
+      setCourses(courseList)
+
+      const attendance = (aRes.data ?? []) as AttendanceLite[]
+
+      if (tRes.error) console.error("載入教師失敗:", tRes.error.message)
+      else setTeachers((tRes.data as TeacherRow[]).map(r => {
+        const mine = courseList.filter(c => c.teacherIds.includes(r.id))
+        const monthly = mine.reduce((n, c) => n + countMonthOccurrences(c.schedule, now.getFullYear(), now.getMonth()), 0)
+        const myCourseIds = new Set(mine.map(c => c.id))
+        const records = attendance.filter(a => myCourseIds.has(a.course_id)).flatMap(a => a.records)
+        const rate = records.length === 0 ? 100
+          : Math.round(records.filter(x => x.status === "出席").length / records.length * 100)
+        return {
+          id: r.id, name: r.name, specialty: r.specialty ?? "",
+          courses: mine.length, monthlyClasses: monthly, attendanceRate: rate,
+          joined: r.created_at ? `${new Date(r.created_at).getFullYear()}/${pad(new Date(r.created_at).getMonth() + 1)}` : "—",
+          status: r.status, email: r.email ?? "", phone: r.phone ?? "",
+          bio: r.bio ?? "", photo: r.photo_url ?? undefined, lineUserId: r.line_user_id ?? undefined,
+        }
+      }))
+      setLoading(false)
+    })
+  }, [supabase])
+
+  const filtered = teachers.filter(t =>
+    !query.trim() || t.name.includes(query.trim()) || t.specialty.includes(query.trim())
+  )
 
   function openAdd() { setForm(EMPTY_FORM); setDrawer("add") }
 
   function openEdit(t: Teacher) {
     setEditing(t)
-    setForm({ name: t.name, specialty: t.specialty, email: t.email ?? "", phone: t.phone ?? "", bio: t.bio ?? "", status: t.status, photo: t.photo ?? "" })
+    setForm({ name: t.name, specialty: t.specialty, email: t.email ?? "", phone: t.phone ?? "", bio: t.bio ?? "", status: t.status, photo: t.photo ?? "", lineUserId: t.lineUserId ?? "" })
     setDrawer("edit")
   }
 
@@ -247,29 +298,66 @@ export default function TeachersPage() {
 
   function close() { setDrawer(null); setEditing(null) }
 
-  function saveAdd() {
-    if (!form.name.trim()) return
-    const today = new Date()
-    const joined = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, "0")}`
-    setTeachers(prev => [...prev, {
-      id: nextId, name: form.name, specialty: form.specialty, email: form.email,
-      phone: form.phone, bio: form.bio, status: form.status, photo: form.photo || undefined,
-      courses: 0, monthlyClasses: 0, attendanceRate: 100, joined,
-    }])
-    setNextId(n => n + 1)
-    close()
+  async function formToRow() {
+    const photoUrl = await uploadImage(supabase, form.photo, "teachers")
+    return {
+      name: form.name.trim(),
+      specialty: form.specialty || null,
+      email: form.email || null,
+      phone: form.phone || null,
+      bio: form.bio || null,
+      photo_url: photoUrl || null,
+      line_user_id: form.lineUserId || null,
+      status: form.status,
+    }
   }
 
-  function saveEdit() {
-    if (!editing) return
-    setTeachers(prev => prev.map(t => t.id === editing.id
-      ? { ...t, name: form.name, specialty: form.specialty, email: form.email, phone: form.phone, bio: form.bio, status: form.status, photo: form.photo || undefined }
-      : t
-    ))
-    close()
+  async function saveAdd() {
+    if (!form.name.trim() || saving) return
+    setSaving(true)
+    try {
+      const row = await formToRow()
+      const { data, error } = await supabase.from("teachers").insert(row).select().single()
+      if (error) throw new Error(error.message)
+      const r = data as TeacherRow
+      setTeachers(prev => [...prev, {
+        id: r.id, name: r.name, specialty: r.specialty ?? "",
+        courses: 0, monthlyClasses: 0, attendanceRate: 100,
+        joined: `${new Date(r.created_at).getFullYear()}/${pad(new Date(r.created_at).getMonth() + 1)}`,
+        status: r.status, email: r.email ?? "", phone: r.phone ?? "",
+        bio: r.bio ?? "", photo: r.photo_url ?? undefined, lineUserId: r.line_user_id ?? undefined,
+      }])
+      close()
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "新增失敗")
+    } finally {
+      setSaving(false)
+    }
   }
 
-  function deleteTeacher(id: number) {
+  async function saveEdit() {
+    if (!editing || saving) return
+    setSaving(true)
+    try {
+      const row = await formToRow()
+      const { error } = await supabase.from("teachers").update(row).eq("id", editing.id)
+      if (error) throw new Error(error.message)
+      setTeachers(prev => prev.map(t => t.id === editing.id
+        ? { ...t, name: row.name, specialty: row.specialty ?? "", email: row.email ?? "", phone: row.phone ?? "", bio: row.bio ?? "", status: row.status, photo: row.photo_url ?? undefined, lineUserId: row.line_user_id ?? undefined }
+        : t
+      ))
+      close()
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "儲存失敗")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function deleteTeacher(id: string) {
+    if (!confirm("確定刪除此教師？")) return
+    const { error } = await supabase.from("teachers").delete().eq("id", id)
+    if (error) { alert(`刪除失敗：${error.message}`); return }
     setTeachers(prev => prev.filter(t => t.id !== id))
     close()
   }
@@ -288,7 +376,7 @@ export default function TeachersPage() {
 
       <div className="relative mb-4">
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#bbb]" />
-        <input placeholder="搜尋教師姓名 / 專長…"
+        <input placeholder="搜尋教師姓名 / 專長…" value={query} onChange={e => setQuery(e.target.value)}
           className="w-full pl-9 pr-4 py-2.5 text-sm bg-white border border-[#f0f0f0] rounded-xl outline-none focus:border-black" />
       </div>
 
@@ -298,7 +386,9 @@ export default function TeachersPage() {
           <span>教師</span><span>專長</span><span>課程數</span><span>本月課堂</span><span>出席率</span><span>加入</span><span>狀態</span><span></span>
         </div>
         <div className="divide-y divide-[#f5f5f5]">
-          {teachers.map((t) => (
+          {loading && <p className="px-5 py-4 text-sm text-[#ccc]">載入中…</p>}
+          {!loading && filtered.length === 0 && <p className="px-5 py-4 text-sm text-[#ccc]">尚無教師</p>}
+          {filtered.map((t) => (
             <div key={t.id} className="grid grid-cols-[1.5fr_2fr_0.8fr_1fr_1fr_0.8fr_0.7fr_auto] gap-4 items-center px-5 py-4">
               <div className="flex items-center gap-2.5">
                 {t.photo
@@ -331,7 +421,8 @@ export default function TeachersPage() {
 
       {/* Mobile cards */}
       <div className="md:hidden flex flex-col gap-3">
-        {teachers.map((t) => (
+        {loading && <p className="text-sm text-[#ccc]">載入中…</p>}
+        {filtered.map((t) => (
           <div key={t.id} className="bg-white rounded-xl p-4 border border-[#f0f0f0]">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2.5">
@@ -375,7 +466,7 @@ export default function TeachersPage() {
 
       {/* Calendar modal */}
       {calendarTeacher && (
-        <TeacherCalendarModal teacher={calendarTeacher} onClose={() => setCalendar(null)} />
+        <TeacherCalendarModal teacher={calendarTeacher} courses={courses} onClose={() => setCalendar(null)} />
       )}
 
       {/* ── 新增 / 編輯 Drawer ── */}
@@ -440,6 +531,35 @@ export default function TeachersPage() {
                 </div>
               </Field>
             </div>
+
+            {/* LINE 綁定 */}
+            <div className="flex flex-col gap-3 pt-1">
+              <p className="text-[11px] text-[#aaa] uppercase tracking-widest">LINE 綁定</p>
+              <Field label="LINE User ID">
+                <div className="relative">
+                  <input
+                    value={form.lineUserId}
+                    onChange={e => setForm(f => ({ ...f, lineUserId: e.target.value }))}
+                    placeholder="Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                    className={inputCls}
+                  />
+                  {form.lineUserId && (
+                    <button
+                      type="button"
+                      onClick={() => setForm(f => ({ ...f, lineUserId: "" }))}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#bbb] hover:text-black transition-colors"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+                <p className="text-[11px] text-[#aaa] mt-1.5">
+                  {form.lineUserId
+                    ? <span className="text-[#06C755]">✓ 已綁定 LINE 帳號</span>
+                    : "教師以 LINE 登入後自動填入，或由管理員手動輸入"}
+                </p>
+              </Field>
+            </div>
           </div>
 
           <div className={`px-6 py-4 border-t border-[#f0f0f0] flex gap-2 ${drawer === "edit" ? "justify-between" : "justify-end"}`}>
@@ -453,9 +573,9 @@ export default function TeachersPage() {
               <button onClick={close} className="px-4 py-2 text-sm border border-[#f0f0f0] rounded-xl hover:border-black transition-colors">
                 取消
               </button>
-              <button onClick={drawer === "add" ? saveAdd : saveEdit}
-                className="px-5 py-2 text-sm bg-black text-white rounded-xl hover:bg-[#222] transition-colors">
-                {drawer === "add" ? "建立教師" : "儲存"}
+              <button onClick={drawer === "add" ? saveAdd : saveEdit} disabled={saving}
+                className="px-5 py-2 text-sm bg-black text-white rounded-xl hover:bg-[#222] disabled:opacity-50 transition-colors">
+                {saving ? "儲存中…" : drawer === "add" ? "建立教師" : "儲存"}
               </button>
             </div>
           </div>
