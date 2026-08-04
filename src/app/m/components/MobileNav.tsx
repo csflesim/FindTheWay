@@ -5,8 +5,6 @@ import { usePathname } from "next/navigation"
 import { Home, BookOpen, MonitorPlay, ScrollText, User } from "lucide-react"
 import { useState, useEffect } from "react"
 
-const PARAMS_KEY = "ftw.params.v1"
-
 const ALL_TABS = [
   { href: "/m",               label: "首頁",  icon: Home,        feature: null },
   { href: "/m/courses",       label: "實體課", icon: BookOpen,    feature: null },
@@ -20,15 +18,14 @@ export default function MobileNav() {
   const [onlineCourse, setOnlineCourse] = useState(true)
 
   useEffect(() => {
-    try {
-      const s = localStorage.getItem(PARAMS_KEY)
-      if (s) {
-        const p = JSON.parse(s)
-        if (p.features && typeof p.features.onlineCourse === "boolean") {
+    fetch("/api/public-params")
+      .then(r => (r.ok ? r.json() : null))
+      .then(p => {
+        if (p?.features && typeof p.features.onlineCourse === "boolean") {
           setOnlineCourse(p.features.onlineCourse)
         }
-      }
-    } catch {}
+      })
+      .catch(() => {})
   }, [])
 
   if (pathname.startsWith("/m/teacher")) return null

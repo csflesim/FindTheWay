@@ -265,6 +265,7 @@ create index tickets_student_idx on public.tickets(student_id);
 create table public.banners (
   id         uuid primary key default gen_random_uuid(),
   image_url  text not null,
+  title      text,
   link_url   text,
   sort_order int not null default 0,
   active     boolean not null default true,

@@ -1,22 +1,30 @@
 'use client'
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Plus, X, Trash2, Upload, GripVertical } from "lucide-react"
+import { createClient } from "@/lib/supabase/client"
+import { uploadImage } from "@/lib/upload"
 
 type Banner = {
-  id: number
+  id: string
   img: string
   title: string
   link: string
   active: boolean
 }
 
-const INITIAL_BANNERS: Banner[] = [
-  { id: 1, img: "/image/banner2.png",            title: "廣告 Banner 2",  link: "",              active: true },
-  { id: 2, img: "/image/banner1.png",            title: "廣告 Banner 1",  link: "",              active: true },
-  { id: 3, img: "/image/watercolor1200x400.png", title: "基礎水彩入門",   link: "/m/courses/1", active: true },
-  { id: 4, img: "/image/sketch1200x400.png",     title: "兒童創意素描",   link: "/m/courses/2", active: true },
-]
+type BannerRow = {
+  id: string
+  image_url: string
+  title: string | null
+  link_url: string | null
+  sort_order: number
+  active: boolean
+}
+
+function fromRow(r: BannerRow): Banner {
+  return { id: r.id, img: r.image_url, title: r.title ?? "", link: r.link_url ?? "", active: r.active }
+}
 
 function Drawer({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
   return (
@@ -32,11 +40,21 @@ function Drawer({ onClose, children }: { onClose: () => void; children: React.Re
 const inputCls = "w-full px-3 py-2.5 text-sm bg-[#fafaf9] border border-[#f0f0f0] rounded-xl outline-none focus:border-black focus:bg-white transition-colors"
 
 export default function MobileBannerPage() {
-  const [banners, setBanners] = useState<Banner[]>(INITIAL_BANNERS)
+  const supabase = useMemo(() => createClient(), [])
+  const [banners, setBanners] = useState<Banner[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
   const [drawer, setDrawer] = useState<"add" | "edit" | null>(null)
   const [editing, setEditing] = useState<Banner | null>(null)
-  const [nextId, setNextId] = useState(10)
   const [form, setForm] = useState({ img: "", title: "", link: "", active: true })
+
+  useEffect(() => {
+    supabase.from("banners").select("*").order("sort_order").then(({ data, error }) => {
+      if (error) console.error("載入廣告圖失敗:", error.message)
+      else setBanners((data as BannerRow[]).map(fromRow))
+      setLoading(false)
+    })
+  }, [supabase])
 
   function handleImgChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -59,44 +77,86 @@ export default function MobileBannerPage() {
 
   function close() { setDrawer(null); setEditing(null) }
 
-  function saveAdd() {
-    if (!form.img) return
-    setBanners(prev => [...prev, { id: nextId, ...form }])
-    setNextId(n => n + 1)
-    close()
+  async function saveAdd() {
+    if (!form.img || saving) return
+    setSaving(true)
+    try {
+      const imageUrl = await uploadImage(supabase, form.img, "banners")
+      const { data, error } = await supabase.from("banners").insert({
+        image_url: imageUrl,
+        title: form.title || null,
+        link_url: form.link || null,
+        active: form.active,
+        sort_order: banners.length + 1,
+      }).select().single()
+      if (error) throw new Error(error.message)
+      setBanners(prev => [...prev, fromRow(data as BannerRow)])
+      close()
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "新增失敗")
+    } finally {
+      setSaving(false)
+    }
   }
 
-  function saveEdit() {
-    if (!editing) return
-    setBanners(prev => prev.map(b => b.id === editing.id ? { ...b, ...form } : b))
-    close()
+  async function saveEdit() {
+    if (!editing || saving) return
+    setSaving(true)
+    try {
+      const imageUrl = await uploadImage(supabase, form.img, "banners")
+      const { error } = await supabase.from("banners").update({
+        image_url: imageUrl,
+        title: form.title || null,
+        link_url: form.link || null,
+        active: form.active,
+      }).eq("id", editing.id)
+      if (error) throw new Error(error.message)
+      setBanners(prev => prev.map(b => b.id === editing.id ? { ...b, img: imageUrl, title: form.title, link: form.link, active: form.active } : b))
+      close()
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "儲存失敗")
+    } finally {
+      setSaving(false)
+    }
   }
 
-  function deleteBanner(id: number) {
+  async function deleteBanner(id: string) {
+    if (!confirm("確定刪除此廣告圖？")) return
+    const { error } = await supabase.from("banners").delete().eq("id", id)
+    if (error) { alert(`刪除失敗：${error.message}`); return }
     setBanners(prev => prev.filter(b => b.id !== id))
     close()
   }
 
-  function toggleActive(id: number) {
+  async function toggleActive(id: string) {
+    const target = banners.find(b => b.id === id)
+    if (!target) return
+    const { error } = await supabase.from("banners").update({ active: !target.active }).eq("id", id)
+    if (error) { alert(`更新失敗：${error.message}`); return }
     setBanners(prev => prev.map(b => b.id === id ? { ...b, active: !b.active } : b))
+  }
+
+  // 重新排序後把整份順序寫回 DB
+  async function persistOrder(next: Banner[]) {
+    setBanners(next)
+    const updates = next.map((b, i) => supabase.from("banners").update({ sort_order: i + 1 }).eq("id", b.id))
+    const results = await Promise.all(updates)
+    const failed = results.find(r => r.error)
+    if (failed?.error) alert(`儲存排序失敗：${failed.error.message}`)
   }
 
   function moveUp(idx: number) {
     if (idx === 0) return
-    setBanners(prev => {
-      const next = [...prev]
-      ;[next[idx - 1], next[idx]] = [next[idx], next[idx - 1]]
-      return next
-    })
+    const next = [...banners]
+    ;[next[idx - 1], next[idx]] = [next[idx], next[idx - 1]]
+    persistOrder(next)
   }
 
   function moveDown(idx: number) {
-    setBanners(prev => {
-      if (idx >= prev.length - 1) return prev
-      const next = [...prev]
-      ;[next[idx], next[idx + 1]] = [next[idx + 1], next[idx]]
-      return next
-    })
+    if (idx >= banners.length - 1) return
+    const next = [...banners]
+    ;[next[idx], next[idx + 1]] = [next[idx + 1], next[idx]]
+    persistOrder(next)
   }
 
   return (
@@ -111,11 +171,16 @@ export default function MobileBannerPage() {
         </button>
       </div>
 
-      <p className="text-xs text-[#aaa] mb-4">廣告圖依順序顯示於手機首頁輪播，建議尺寸：1200 × 400 px（3:1）</p>
+      <p className="text-xs text-[#aaa] mb-4">廣告圖依順序顯示於手機首頁輪播（前三堂開課中課程的橫圖會自動接在後面），建議尺寸：1200 × 400 px（3:1）</p>
 
       {/* Banner list */}
       <div className="flex flex-col gap-3">
-        {banners.length === 0 && (
+        {loading && (
+          <div className="bg-white rounded-xl border border-[#f0f0f0] px-5 py-10 text-center">
+            <p className="text-sm text-[#ccc]">載入中…</p>
+          </div>
+        )}
+        {!loading && banners.length === 0 && (
           <div className="bg-white rounded-xl border border-[#f0f0f0] px-5 py-10 text-center">
             <p className="text-sm text-[#ccc]">尚無廣告圖，點擊「新增廣告」開始</p>
           </div>
@@ -211,7 +276,7 @@ export default function MobileBannerPage() {
             <div>
               <label className="text-xs text-[#999] mb-1.5 block">點擊連結（選填）</label>
               <input value={form.link} onChange={e => setForm(f => ({ ...f, link: e.target.value }))}
-                placeholder="/m/courses/1" className={inputCls} />
+                placeholder="/m/courses" className={inputCls} />
             </div>
 
             <div>
@@ -240,9 +305,9 @@ export default function MobileBannerPage() {
               <button onClick={close} className="px-4 py-2 text-sm border border-[#f0f0f0] rounded-xl hover:border-black transition-colors">
                 取消
               </button>
-              <button onClick={drawer === "add" ? saveAdd : saveEdit} disabled={!form.img}
+              <button onClick={drawer === "add" ? saveAdd : saveEdit} disabled={!form.img || saving}
                 className="px-5 py-2 text-sm bg-black text-white rounded-xl hover:bg-[#222] disabled:opacity-40 transition-colors">
-                {drawer === "add" ? "新增" : "儲存"}
+                {saving ? "儲存中…" : drawer === "add" ? "新增" : "儲存"}
               </button>
             </div>
           </div>

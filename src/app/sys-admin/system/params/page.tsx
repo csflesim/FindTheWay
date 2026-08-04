@@ -3,7 +3,6 @@
 import { useRef, useState, useEffect } from "react"
 import { CheckCircle2, Loader2 } from "lucide-react"
 
-const PARAMS_KEY = "ftw.params.v1"
 const ALL_PAY_METHODS = ["銀行轉帳", "現金", "Line Pay", "信用卡"]
 const DEFAULT_PAY_METHODS = ["銀行轉帳", "現金"]
 const DEFAULT_FEATURES = { onlineCourse: true }
@@ -75,22 +74,13 @@ export default function ParamsPage() {
   const [testing, setTesting]       = useState<"email" | "line" | null>(null)
 
   useEffect(() => {
-    try {
-      const s = localStorage.getItem(PARAMS_KEY)
-      if (s) {
-        const p = JSON.parse(s)
-        if (Array.isArray(p.payMethods)) setEnabledPay(p.payMethods)
-        if (typeof p.features === "object" && p.features !== null) {
-          setFeatures(f => ({ ...f, ...p.features }))
-        }
-      }
-    } catch {}
-
-    // 載入已儲存的 LINE / SMTP 設定，填回欄位
+    // 載入已儲存的設定：LINE/SMTP 填回欄位，付款方式/功能開關進 state
     fetch("/api/admin/params")
       .then(r => (r.ok ? r.json() : null))
       .then(cfg => {
         if (!cfg) return
+        if (Array.isArray(cfg.pay_methods) && cfg.pay_methods.length > 0) setEnabledPay(cfg.pay_methods)
+        if (cfg.features && typeof cfg.features === "object") setFeatures(f => ({ ...f, ...cfg.features }))
         for (const [k, v] of Object.entries(cfg)) {
           const el = allRefs.current[k]
           if (el && typeof v === "string" && !el.value) el.value = v
@@ -99,14 +89,19 @@ export default function ParamsPage() {
       .catch(() => {})
   }, [])
 
-  function saveLocal(payMethods: string[], feats: typeof DEFAULT_FEATURES) {
-    try { localStorage.setItem(PARAMS_KEY, JSON.stringify({ payMethods, features: feats })) } catch {}
+  // 付款方式 / 功能開關即時寫入 settings 表
+  function saveSettings(payMethods: string[], feats: typeof DEFAULT_FEATURES) {
+    fetch("/api/admin/params", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "settings", pay_methods: payMethods, features: feats }),
+    }).then(r => { if (!r.ok) alert("設定儲存失敗，請重試") }).catch(() => alert("設定儲存失敗，請重試"))
   }
 
   function togglePayMethod(m: string) {
     setEnabledPay(prev => {
       const next = prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]
-      saveLocal(next, features)
+      saveSettings(next, features)
       return next
     })
   }
@@ -114,7 +109,7 @@ export default function ParamsPage() {
   function toggleFeature(key: keyof typeof DEFAULT_FEATURES) {
     setFeatures(prev => {
       const next = { ...prev, [key]: !prev[key] }
-      saveLocal(enabledPay, next)
+      saveSettings(enabledPay, next)
       return next
     })
   }
