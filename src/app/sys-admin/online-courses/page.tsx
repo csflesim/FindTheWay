@@ -1,79 +1,23 @@
 'use client'
 
-import { useState, useMemo, useRef } from "react"
+import { useState, useMemo, useRef, useEffect } from "react"
 import { Search, Plus, X, ChevronUp, ChevronDown, Trash2, Upload, Eye, EyeOff, GripVertical } from "lucide-react"
+import { createClient } from "@/lib/supabase/client"
+import { uploadImage } from "@/lib/upload"
+import { fetchOnlineCourses, ONLINE_CATEGORIES, type OnlineCourseData, type OnlineSection } from "@/lib/onlineCoursesDb"
 
 type CourseType = "免費課程" | "系列課"
-type Section = {
-  id: number
-  title: string
-  videoUrl: string
-  label: string
-  sort: number
-  freePreview: boolean
-}
-type OnlineCourse = {
-  id: number
-  title: string
-  subtitle: string
-  desc: string
-  type: CourseType
-  price: number
-  rating: number
-  sort: number
-  publishDate: string
-  published: boolean
-  coverUrl: string
-  recommendedIds: number[]
-  sections: Section[]
-}
 
-let nextSectionId = 100
+let sectionSeq = 0
+const newSectionId = () => `new_${Date.now()}_${++sectionSeq}`
 
-const INITIAL_COURSES: OnlineCourse[] = [
-  {
-    id: 1, title: "The Perfect E-commerce Marketing Team Setup For 2025",
-    subtitle: "面向電商與實體零售的團隊分工、獲客與轉化課",
-    desc: "這套課程圍繞 2025 年電商銷售團隊的崗位配置和協作方式展開，適合正在搭建線上銷售、直播行銷或實體零售數字化團隊的負責人參考。",
-    type: "免費課程", price: 0, rating: 4.6, sort: 10,
-    publishDate: "2025-03-12", published: true, coverUrl: "",
-    recommendedIds: [2, 3],
-    sections: [
-      { id: 1, title: "電商銷售團隊配置", videoUrl: "https://www.youtube.com/watch?v=xssFGErVuqw", label: "策略課", sort: 1, freePreview: true },
-      { id: 2, title: "1", videoUrl: "https://www.youtube.com/watch?v=xssFGErVuqw", label: "視頻課程", sort: 2, freePreview: false },
-      { id: 3, title: "2", videoUrl: "https://www.youtube.com/watch?v=xssFGErVuqw", label: "視頻課程", sort: 3, freePreview: false },
-      { id: 4, title: "3", videoUrl: "https://www.youtube.com/watch?v=xssFGErVuqw", label: "視頻課程", sort: 4, freePreview: false },
-    ],
-  },
-  {
-    id: 2, title: "DIGITAL MARKETING Full Course for Beginners in 3 Hours",
-    subtitle: "從 SEO、社媒、廣告到內容漏斗的數字行銷入門課",
-    desc: "全面涵蓋數位行銷核心知識，適合剛入門或想系統補強的學員。",
-    type: "系列課", price: 0, rating: 4.8, sort: 20,
-    publishDate: "2025-04-01", published: true, coverUrl: "",
-    recommendedIds: [1],
-    sections: [
-      { id: 10, title: "數位行銷概覽", videoUrl: "https://www.youtube.com/watch?v=demo", label: "視頻課程", sort: 1, freePreview: true },
-    ],
-  },
-  {
-    id: 3, title: "AI for Business: Start Your Enterprise AI Journey",
-    subtitle: "用企業視角理解生成式 AI、自動化與落地路線",
-    desc: "課程幫助企業主與主管理解生成式 AI 的核心應用場景、導入策略與落地工具選型。",
-    type: "系列課", price: 0, rating: 4.7, sort: 30,
-    publishDate: "2025-05-10", published: true, coverUrl: "",
-    recommendedIds: [2],
-    sections: [
-      { id: 20, title: "生成式 AI 概論", videoUrl: "https://www.youtube.com/watch?v=demo2", label: "視頻課程", sort: 1, freePreview: true },
-    ],
-  },
-]
+type FormState = Omit<OnlineCourseData, "id">
 
-const EMPTY_FORM: Omit<OnlineCourse, "id"> = {
+const EMPTY_FORM: FormState = {
   title: "", subtitle: "", desc: "",
   type: "免費課程", price: 0, rating: 0, sort: 10,
   publishDate: "", published: true, coverUrl: "",
-  recommendedIds: [], sections: [],
+  recommendedIds: [], categories: [], sections: [],
 }
 
 const typeStyle: Record<CourseType, string> = {
@@ -102,14 +46,21 @@ function Input({ value, onChange, placeholder, className }: {
 }
 
 export default function OnlineCoursesPage() {
-  const [courses, setCourses] = useState<OnlineCourse[]>(INITIAL_COURSES)
+  const supabase = useMemo(() => createClient(), [])
+  const [courses, setCourses] = useState<OnlineCourseData[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
   const [query, setQuery] = useState("")
   const [filterType, setFilterType] = useState<CourseType | "全部">("全部")
   const [drawerMode, setDrawerMode] = useState<"add" | "edit" | null>(null)
-  const [editId, setEditId] = useState<number | null>(null)
-  const [form, setForm] = useState<Omit<OnlineCourse, "id">>(EMPTY_FORM)
-  const [deleteId, setDeleteId] = useState<number | null>(null)
+  const [editId, setEditId] = useState<string | null>(null)
+  const [form, setForm] = useState<FormState>(EMPTY_FORM)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
   const coverRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    fetchOnlineCourses(supabase).then(list => { setCourses(list); setLoading(false) })
+  }, [supabase])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -122,34 +73,83 @@ export default function OnlineCoursesPage() {
 
   function openAdd() {
     setForm({ ...EMPTY_FORM, sort: Math.max(...courses.map(c => c.sort), 0) + 10 })
+    setEditId(null)
     setDrawerMode("add")
   }
 
-  function openEdit(c: OnlineCourse) {
+  function openEdit(c: OnlineCourseData) {
     setForm({
       title: c.title, subtitle: c.subtitle, desc: c.desc,
       type: c.type, price: c.price, rating: c.rating, sort: c.sort,
       publishDate: c.publishDate, published: c.published, coverUrl: c.coverUrl,
       recommendedIds: [...c.recommendedIds],
+      categories: [...c.categories],
       sections: c.sections.map(s => ({ ...s })),
     })
     setEditId(c.id)
     setDrawerMode("edit")
   }
 
-  function saveDrawer() {
-    if (!form.title.trim()) return
-    if (drawerMode === "add") {
-      const newId = Math.max(...courses.map(c => c.id), 0) + 1
-      setCourses(list => [...list, { ...form, id: newId }])
-    } else if (drawerMode === "edit" && editId !== null) {
-      setCourses(list => list.map(c => c.id === editId ? { ...form, id: editId } : c))
+  async function saveDrawer() {
+    if (!form.title.trim() || saving) return
+    setSaving(true)
+    try {
+      const coverUrl = await uploadImage(supabase, form.coverUrl, "online-courses")
+      const row = {
+        title: form.title.trim(),
+        subtitle: form.subtitle || null,
+        description: form.desc || null,
+        type: form.type,
+        price: form.price,
+        rating: form.rating,
+        sort_order: form.sort,
+        publish_date: form.publishDate || null,
+        published: form.published,
+        cover_url: coverUrl || null,
+        recommended_ids: form.recommendedIds,
+        categories: form.categories,
+      }
+
+      let courseId = editId
+      if (drawerMode === "add") {
+        const { data, error } = await supabase.from("online_courses").insert(row).select("id").single()
+        if (error) throw new Error(error.message)
+        courseId = data.id
+      } else if (courseId) {
+        const { error } = await supabase.from("online_courses").update(row).eq("id", courseId)
+        if (error) throw new Error(error.message)
+      }
+      if (!courseId) throw new Error("儲存失敗")
+
+      // 小節整批重建（順序 = 目前排序）
+      await supabase.from("online_sections").delete().eq("course_id", courseId)
+      const sorted = [...form.sections].sort((a, b) => a.sort - b.sort)
+      if (sorted.length > 0) {
+        const { error } = await supabase.from("online_sections").insert(sorted.map((s, i) => ({
+          course_id: courseId,
+          title: s.title || `第 ${i + 1} 節`,
+          video_url: s.videoUrl,
+          label: s.label || null,
+          free_preview: s.freePreview,
+          sort_order: i + 1,
+        })))
+        if (error) throw new Error(error.message)
+      }
+
+      const fresh = await fetchOnlineCourses(supabase)
+      setCourses(fresh)
+      setDrawerMode(null)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "儲存失敗")
+    } finally {
+      setSaving(false)
     }
-    setDrawerMode(null)
   }
 
-  function confirmDelete() {
+  async function confirmDelete() {
     if (deleteId === null) return
+    const { error } = await supabase.from("online_courses").delete().eq("id", deleteId)
+    if (error) { alert(`刪除失敗：${error.message}`); return }
     setCourses(list => list.filter(c => c.id !== deleteId))
     setDeleteId(null)
   }
@@ -167,19 +167,19 @@ export default function OnlineCoursesPage() {
     const maxSort = form.sections.length > 0 ? Math.max(...form.sections.map(s => s.sort)) : 0
     setForm(f => ({
       ...f,
-      sections: [...f.sections, { id: ++nextSectionId, title: "", videoUrl: "", label: "視頻課程", sort: maxSort + 1, freePreview: false }],
+      sections: [...f.sections, { id: newSectionId(), title: "", videoUrl: "", label: "視頻課程", sort: maxSort + 1, freePreview: false }],
     }))
   }
 
-  function updateSection(id: number, patch: Partial<Section>) {
+  function updateSection(id: string, patch: Partial<OnlineSection>) {
     setForm(f => ({ ...f, sections: f.sections.map(s => s.id === id ? { ...s, ...patch } : s) }))
   }
 
-  function removeSection(id: number) {
+  function removeSection(id: string) {
     setForm(f => ({ ...f, sections: f.sections.filter(s => s.id !== id) }))
   }
 
-  function moveSection(id: number, dir: -1 | 1) {
+  function moveSection(id: string, dir: -1 | 1) {
     setForm(f => {
       const arr = [...f.sections].sort((a, b) => a.sort - b.sort)
       const idx = arr.findIndex(s => s.id === id)
@@ -194,12 +194,21 @@ export default function OnlineCoursesPage() {
     })
   }
 
-  function toggleRecommend(id: number) {
+  function toggleRecommend(id: string) {
     setForm(f => ({
       ...f,
       recommendedIds: f.recommendedIds.includes(id)
         ? f.recommendedIds.filter(r => r !== id)
         : [...f.recommendedIds, id],
+    }))
+  }
+
+  function toggleCategory(cat: string) {
+    setForm(f => ({
+      ...f,
+      categories: f.categories.includes(cat)
+        ? f.categories.filter(c => c !== cat)
+        : [...f.categories, cat],
     }))
   }
 
@@ -245,7 +254,8 @@ export default function OnlineCoursesPage() {
           <span>封面</span><span>課程名稱</span><span>類型</span><span>小節</span><span>價格</span><span>排序</span><span>發布</span><span>操作</span>
         </div>
         <div className="divide-y divide-[#f5f5f5]">
-          {filtered.length === 0 && <p className="px-5 py-8 text-sm text-[#ccc]">查無課程</p>}
+          {loading && <p className="px-5 py-8 text-sm text-[#ccc]">載入中…</p>}
+          {!loading && filtered.length === 0 && <p className="px-5 py-8 text-sm text-[#ccc]">查無課程</p>}
           {filtered.map(c => (
             <div key={c.id} className="grid grid-cols-[60px_1fr_100px_60px_80px_60px_80px_100px] gap-4 items-center px-5 py-3.5">
               {/* Cover */}
@@ -279,7 +289,8 @@ export default function OnlineCoursesPage() {
 
       {/* Mobile cards */}
       <div className="md:hidden flex flex-col gap-3">
-        {filtered.length === 0 && <p className="text-sm text-[#ccc] py-4">查無課程</p>}
+        {loading && <p className="text-sm text-[#ccc] py-4">載入中…</p>}
+        {!loading && filtered.length === 0 && <p className="text-sm text-[#ccc] py-4">查無課程</p>}
         {filtered.map(c => (
           <div key={c.id} className="bg-white rounded-xl border border-[#f0f0f0] p-4">
             <div className="flex gap-3 mb-3">
@@ -402,9 +413,9 @@ export default function OnlineCoursesPage() {
                   <div className="flex items-center gap-3 h-[42px]">
                     <span className="text-sm text-[#999]">{form.published ? "發布" : "隱藏"}</span>
                     <button type="button" onClick={() => setForm(f => ({ ...f, published: !f.published }))}
-                      className={`relative w-10 h-5.5 rounded-full transition-colors ${form.published ? "bg-black" : "bg-[#e0e0e0]"}`}
+                      className={`relative w-10 rounded-full transition-colors ${form.published ? "bg-black" : "bg-[#e0e0e0]"}`}
                       style={{ height: 22 }}>
-                      <span className={`absolute top-0.5 w-4.5 h-4.5 rounded-full bg-white shadow transition-transform ${form.published ? "translate-x-5" : "translate-x-0.5"}`}
+                      <span className={`absolute top-0.5 rounded-full bg-white shadow transition-transform ${form.published ? "translate-x-5" : "translate-x-0.5"}`}
                         style={{ width: 18, height: 18 }} />
                     </button>
                     {form.published
@@ -414,6 +425,20 @@ export default function OnlineCoursesPage() {
                   </div>
                 </Field>
               </div>
+
+              {/* Categories */}
+              <Field label="前台分類（可複選）">
+                <div className="flex gap-2 flex-wrap">
+                  {ONLINE_CATEGORIES.map(cat => (
+                    <button key={cat} type="button" onClick={() => toggleCategory(cat)}
+                      className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${
+                        form.categories.includes(cat)
+                          ? "bg-black text-white border-black"
+                          : "bg-white text-[#666] border-[#f0f0f0] hover:border-[#ccc]"
+                      }`}>{cat}</button>
+                  ))}
+                </div>
+              </Field>
 
               {/* Recommended courses */}
               {otherCourses.length > 0 && (
@@ -463,7 +488,7 @@ export default function OnlineCoursesPage() {
 
                       {/* URL */}
                       <input value={s.videoUrl} onChange={e => updateSection(s.id, { videoUrl: e.target.value })}
-                        placeholder="影片 URL"
+                        placeholder="YouTube 影片網址"
                         className="flex-1 min-w-0 px-2 py-1.5 text-xs bg-white border border-[#f0f0f0] rounded-lg outline-none focus:border-black transition-colors" />
 
                       {/* Label */}
@@ -500,9 +525,9 @@ export default function OnlineCoursesPage() {
                 className="flex-1 py-2.5 text-sm border border-[#f0f0f0] rounded-xl text-[#999] hover:border-[#ccc] hover:text-black transition-colors">
                 取消
               </button>
-              <button onClick={saveDrawer}
-                className="flex-1 py-2.5 text-sm bg-black text-white rounded-xl hover:bg-[#222] transition-colors">
-                確認
+              <button onClick={saveDrawer} disabled={saving}
+                className="flex-1 py-2.5 text-sm bg-black text-white rounded-xl hover:bg-[#222] disabled:opacity-50 transition-colors">
+                {saving ? "儲存中…" : "確認"}
               </button>
             </div>
           </aside>

@@ -1,9 +1,12 @@
 'use client'
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import Link from "next/link"
 import { Search, Bell, Star, ChevronRight } from "lucide-react"
-import { ONLINE_COURSES, CATEGORIES } from "../_lib/online-courses"
+import { createClient } from "@/lib/supabase/client"
+import { fetchOnlineCourses, ONLINE_CATEGORIES, type OnlineCourseData } from "@/lib/onlineCoursesDb"
+
+const CATEGORIES = ["全部", ...ONLINE_CATEGORIES]
 
 const CATEGORY_ICONS: Record<string, string> = {
   "AI諮詢":  "🤖",
@@ -22,17 +25,27 @@ function StarRating({ value }: { value: number }) {
 }
 
 export default function OnlineCoursesPage() {
+  const supabase = useMemo(() => createClient(), [])
+  const [courses, setCourses] = useState<OnlineCourseData[]>([])
+  const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState("")
   const [activeCategory, setActiveCategory] = useState("全部")
 
+  useEffect(() => {
+    fetchOnlineCourses(supabase, { publishedOnly: true }).then(list => {
+      setCourses(list)
+      setLoading(false)
+    })
+  }, [supabase])
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return ONLINE_COURSES.filter(c => {
+    return courses.filter(c => {
       const matchQ = !q || c.title.toLowerCase().includes(q) || c.subtitle.includes(q)
       const matchCat = activeCategory === "全部" || c.categories.includes(activeCategory)
-      return matchQ && matchCat && c.published
+      return matchQ && matchCat
     })
-  }, [query, activeCategory])
+  }, [courses, query, activeCategory])
 
   const freeCourses = filtered.filter(c => c.type === "免費課程")
   const seriesCourses = filtered.filter(c => c.type === "系列課")
@@ -144,7 +157,10 @@ export default function OnlineCoursesPage() {
           </section>
         )}
 
-        {filtered.length === 0 && (
+        {loading && (
+          <div className="text-center py-16 text-[#ccc] text-sm">載入中…</div>
+        )}
+        {!loading && filtered.length === 0 && (
           <div className="text-center py-16 text-[#ccc] text-sm">找不到相關課程</div>
         )}
       </div>

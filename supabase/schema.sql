@@ -282,6 +282,7 @@ create table public.online_courses (
   rating          numeric(2,1) not null default 5.0,
   cover_url       text,
   recommended_ids uuid[] not null default '{}',
+  categories      text[] not null default '{}',   -- 前台分類篩選
   published       boolean not null default false,
   publish_date    date,
   sort_order      int not null default 0,

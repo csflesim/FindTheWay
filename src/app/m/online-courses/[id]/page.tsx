@@ -1,9 +1,10 @@
 'use client'
 
-import { use, useState, useEffect, useRef } from "react"
+import { use, useState, useEffect, useRef, useMemo } from "react"
 import Link from "next/link"
 import { ChevronLeft, Star, Play, Pause, Lock, Maximize2, Minimize2, RotateCcw, RotateCw } from "lucide-react"
-import { ONLINE_COURSES, decVid, type Section } from "../../_lib/online-courses"
+import { createClient } from "@/lib/supabase/client"
+import { fetchOnlineCourses, videoIdFrom, type OnlineCourseData, type OnlineSection } from "@/lib/onlineCoursesDb"
 
 function useYTApiReady() {
   const [ready, setReady] = useState(false)
@@ -265,18 +266,32 @@ function YouTubeEmbed({ videoId, coverUrl }: { videoId: string; coverUrl?: strin
 
 export default function OnlineCourseDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
-  const course = ONLINE_COURSES.find(c => c.id === Number(id))
+  const supabase = useMemo(() => createClient(), [])
+  const [allCourses, setAllCourses] = useState<OnlineCourseData[]>([])
+  const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<"intro" | "review">("intro")
   const [activeSection, setActiveSection] = useState(0)
 
+  useEffect(() => {
+    fetchOnlineCourses(supabase, { publishedOnly: true }).then(list => {
+      setAllCourses(list)
+      setLoading(false)
+    })
+  }, [supabase])
+
+  const course = allCourses.find(c => c.id === id)
+
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center text-[#ccc] text-sm">載入中…</div>
+  }
   if (!course) {
     return <div className="min-h-screen flex items-center justify-center text-[#ccc]">課程不存在</div>
   }
 
-  const recommended = ONLINE_COURSES.filter(c => course.recommendedIds.includes(c.id))
+  const recommended = allCourses.filter(c => course.recommendedIds.includes(c.id))
   const sortedSections = [...course.sections].sort((a, b) => a.sort - b.sort)
-  const currentSection: Section | undefined = sortedSections[activeSection]
-  const currentVideoId = currentSection ? decVid(currentSection.vid) : null
+  const currentSection: OnlineSection | undefined = sortedSections[activeSection]
+  const currentVideoId = currentSection ? videoIdFrom(currentSection.videoUrl) : null
 
   return (
     <div className="min-h-screen bg-[#fafaf9] pb-24">
