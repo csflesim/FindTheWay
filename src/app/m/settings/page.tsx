@@ -263,8 +263,8 @@ export default function SettingsPage() {
 
       {/* Logout confirm overlay */}
       {logoutConfirm && (
-        <div className="fixed inset-0 bg-black/40 flex items-end justify-center z-50 pb-safe">
-          <div className="bg-white rounded-t-2xl w-full max-w-md px-5 py-6">
+        <div className="fixed inset-0 bg-black/40 flex items-end justify-center z-[60]">
+          <div className="bg-white rounded-t-2xl w-full max-w-md px-5 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
             <p className="text-base font-medium mb-1">確定登出？</p>
             <p className="text-sm text-[#aaa] mb-5">您的資料將安全保存，下次可重新登入。</p>
             <div className="flex flex-col gap-2">
