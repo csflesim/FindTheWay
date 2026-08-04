@@ -12,11 +12,15 @@ export async function GET(req: NextRequest) {
   const scope = req.nextUrl.searchParams.get("scope")
   const roles = scope === "staff" ? ["staff", "admin", "teacher"] : ["member"]
 
-  const [profilesRes, usersRes] = await Promise.all([
+  const [profilesRes, usersRes, teachersRes] = await Promise.all([
     admin.from("profiles").select("id, name, phone, role, line_user_id, avatar_url, created_at"),
     admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
+    admin.from("teachers").select("profile_id, photo_url"),
   ])
   const userById = new Map((usersRes.data?.users ?? []).map(u => [u.id, u]))
+  const teacherPhotoById = new Map(
+    (teachersRes.data ?? []).filter(t => t.profile_id && t.photo_url).map(t => [t.profile_id as string, t.photo_url as string])
+  )
 
   const members = (profilesRes.data ?? [])
     .filter(p => roles.includes(p.role))
@@ -28,7 +32,7 @@ export async function GET(req: NextRequest) {
       email: userById.get(p.id)?.email ?? "",
       lastSignInAt: userById.get(p.id)?.last_sign_in_at ?? null,
       lineUserId: p.line_user_id,
-      avatarUrl: p.avatar_url,
+      avatarUrl: p.avatar_url ?? teacherPhotoById.get(p.id) ?? null,   // 教師頭貼作為 fallback
       createdAt: p.created_at,
     }))
   return NextResponse.json({ members })

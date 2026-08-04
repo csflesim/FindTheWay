@@ -11,8 +11,20 @@ type Account = {
   email: string
   phone: string
   lineUserId: string | null
+  avatarUrl: string | null
   createdAt: string
   students: StudentRef[]
+}
+
+function AccountAvatar({ a, size }: { a: Account; size: string }) {
+  if (a.avatarUrl) {
+    return <img src={a.avatarUrl} alt={a.name} className={`${size} rounded-full shrink-0 object-cover`} />
+  }
+  return (
+    <div className={`${size} bg-[#f2f2f2] rounded-full shrink-0 flex items-center justify-center text-[11px] text-[#999] font-medium`}>
+      {(a.name || "?").slice(0, 1)}
+    </div>
+  )
 }
 
 const EMPTY_FORM = { name: "", email: "", phone: "", password: "" }
@@ -196,9 +208,7 @@ export default function AccountsPage() {
           {filtered.map((a) => (
             <div key={a.id} className="grid grid-cols-[1.5fr_2fr_1.4fr_1.8fr_0.8fr_0.8fr_auto] gap-4 items-center px-5 py-4">
               <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 bg-[#f2f2f2] rounded-full shrink-0 flex items-center justify-center text-[11px] text-[#999] font-medium">
-                  {(a.name || "?").slice(0, 1)}
-                </div>
+                <AccountAvatar a={a} size="w-7 h-7" />
                 <p className="text-sm font-medium truncate">{a.name || "—"}</p>
               </div>
               <p className="text-xs text-[#666] truncate">{a.email.endsWith("@findtheway.app") ? "（LINE 帳號）" : a.email}</p>
@@ -227,9 +237,7 @@ export default function AccountsPage() {
           <div key={a.id} className="bg-white rounded-xl p-4 border border-[#f0f0f0]">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 bg-[#f2f2f2] rounded-full shrink-0 flex items-center justify-center text-sm text-[#999] font-medium">
-                  {(a.name || "?").slice(0, 1)}
-                </div>
+                <AccountAvatar a={a} size="w-8 h-8" />
                 <div>
                   <p className="text-sm font-medium">{a.name || "—"}</p>
                   <p className="text-xs text-[#aaa]">{a.email.endsWith("@findtheway.app") ? "（LINE 帳號）" : a.email}</p>

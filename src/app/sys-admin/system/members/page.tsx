@@ -10,6 +10,18 @@ type StaffMember = {
   phone: string | null
   role: string
   lastSignInAt: string | null
+  avatarUrl: string | null
+}
+
+function Avatar({ m, size }: { m: StaffMember; size: string }) {
+  if (m.avatarUrl) {
+    return <img src={m.avatarUrl} alt={m.name} className={`${size} rounded-full shrink-0 object-cover`} />
+  }
+  return (
+    <div className={`${size} bg-[#f2f2f2] rounded-full shrink-0 flex items-center justify-center text-[11px] text-[#999] font-medium`}>
+      {(m.name || "?").slice(0, 1)}
+    </div>
+  )
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -137,9 +149,7 @@ export default function MembersPage() {
           {filtered.map((m) => (
             <div key={m.id} className="grid grid-cols-[1.5fr_2fr_1.4fr_2fr_auto] gap-4 items-center px-5 py-4">
               <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 bg-[#f2f2f2] rounded-full shrink-0 flex items-center justify-center text-[11px] text-[#999] font-medium">
-                  {(m.name || "?").slice(0, 1)}
-                </div>
+                <Avatar m={m} size="w-7 h-7" />
                 <p className="text-sm font-medium">{m.name || "—"}</p>
               </div>
               <p className="text-xs text-[#666]">{m.email}</p>
@@ -160,9 +170,7 @@ export default function MembersPage() {
           <div key={m.id} className="bg-white rounded-xl p-4 border border-[#f0f0f0]">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 bg-[#f2f2f2] rounded-full shrink-0 flex items-center justify-center text-sm text-[#999] font-medium">
-                  {(m.name || "?").slice(0, 1)}
-                </div>
+                <Avatar m={m} size="w-8 h-8" />
                 <div>
                   <p className="text-sm font-medium">{m.name || "—"}</p>
                   <p className="text-xs text-[#aaa]">{m.email}</p>

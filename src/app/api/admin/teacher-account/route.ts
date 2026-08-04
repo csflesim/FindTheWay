@@ -40,10 +40,16 @@ export async function POST(req: NextRequest) {
     userId = data.user.id
   }
 
-  // 角色升級為 teacher（不動 staff/admin），並綁定教師檔
-  const { data: profile } = await admin.from("profiles").select("role").eq("id", userId).maybeSingle()
-  if (profile && profile.role === "member") {
-    await admin.from("profiles").update({ role: "teacher", name: teacher.name }).eq("id", userId)
+  // 角色升級為 teacher（不動 staff/admin），並綁定教師檔、同步頭貼
+  const { data: teacherFull } = await admin.from("teachers").select("photo_url").eq("id", teacherId).maybeSingle()
+  const { data: profile } = await admin.from("profiles").select("role, avatar_url").eq("id", userId).maybeSingle()
+  if (profile) {
+    const patch: Record<string, unknown> = {}
+    if (profile.role === "member") { patch.role = "teacher"; patch.name = teacher.name }
+    if (!profile.avatar_url && teacherFull?.photo_url) patch.avatar_url = teacherFull.photo_url
+    if (Object.keys(patch).length > 0) {
+      await admin.from("profiles").update(patch).eq("id", userId)
+    }
   }
   await admin.from("teachers").update({ profile_id: userId }).eq("id", teacherId)
 
