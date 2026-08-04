@@ -1,22 +1,29 @@
 import { NextRequest, NextResponse } from "next/server"
 import crypto from "crypto"
-import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { sendEmail } from "@/lib/email"
+import {
+  PENDING_COOKIE, CODE_COOKIE, signToken, verifyToken,
+  type LinePending, type EmailCodeState,
+} from "@/lib/line-pending"
 
-// 寄送 Email 綁定驗證碼（LINE 註冊後綁定真實信箱用）。
-// 驗證碼雜湊存在 app_metadata（僅 service role 可寫，使用者無法竄改）。
+// 寄送 Email 驗證碼（LINE 首次登入註冊用）。
+// 此時帳號尚未建立——LINE 身分在簽章 cookie 裡，驗證碼雜湊也放簽章 cookie（不可竄改）。
 
 const COOLDOWN_MS = 60_000
 const EXPIRES_MS = 10 * 60_000
+const SECURE = (process.env.NEXT_PUBLIC_BASE_URL ?? "").startsWith("https")
+
+// 綁定頁查詢暫存身分是否有效
+export async function GET(req: NextRequest) {
+  const pending = verifyToken<LinePending>(req.cookies.get(PENDING_COOKIE)?.value)
+  return NextResponse.json({ pending: !!pending, name: pending?.name ?? "" })
+}
 
 export async function POST(req: NextRequest) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: "請先登入" }, { status: 401 })
-  // 只有 LINE 註冊的合成帳號需要綁定，避免一般帳號（含管理員）誤觸換信箱
-  if (!(user.email ?? "").endsWith("@findtheway.app")) {
-    return NextResponse.json({ error: "此帳號已綁定 Email，不需重新綁定" }, { status: 403 })
+  const pending = verifyToken<LinePending>(req.cookies.get(PENDING_COOKIE)?.value)
+  if (!pending) {
+    return NextResponse.json({ error: "LINE 登入已逾時，請重新用 LINE 登入" }, { status: 401 })
   }
 
   const { email } = await req.json() as { email?: string }
@@ -28,13 +35,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "請使用你自己的 Email" }, { status: 400 })
   }
 
-  const admin = createAdminClient()
-  const { data: u } = await admin.auth.admin.getUserById(user.id)
-  const meta = (u?.user?.app_metadata ?? {}) as Record<string, unknown>
-
   // 冷卻：60 秒內不重複寄送
-  const lastSent = Number(meta.email_code_sent_at ?? 0)
-  if (Date.now() - lastSent < COOLDOWN_MS) {
+  const prev = verifyToken<EmailCodeState>(req.cookies.get(CODE_COOKIE)?.value)
+  if (prev && Date.now() - prev.sentAt < COOLDOWN_MS) {
     return NextResponse.json({ error: "驗證碼已寄出，請稍候再重新發送" }, { status: 429 })
   }
 
@@ -44,11 +47,11 @@ export async function POST(req: NextRequest) {
   const result = await sendEmail({
     to: target,
     subject: "【忙碌不迷路藝術工作坊】Email 驗證碼",
-    text: `您的驗證碼是：${code}\n\n請在 10 分鐘內回到頁面輸入完成綁定。若非本人操作請忽略此信。`,
+    text: `您的驗證碼是：${code}\n\n請在 10 分鐘內回到頁面輸入完成註冊。若非本人操作請忽略此信。`,
   })
   // 記入發送紀錄（不含驗證碼內容）
   try {
-    await admin.from("message_logs").insert({
+    await createAdminClient().from("message_logs").insert({
       channel: "email", recipient: target, subject: "Email 綁定驗證碼",
       status: result.ok ? "sent" : "failed",
       error: result.ok ? null : result.error,
@@ -58,15 +61,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `寄送失敗：${result.error}` }, { status: 502 })
   }
 
-  await admin.auth.admin.updateUserById(user.id, {
-    app_metadata: {
-      ...meta,
-      pending_email: target,
-      email_code_hash: hash,
-      email_code_expires: Date.now() + EXPIRES_MS,
-      email_code_sent_at: Date.now(),
-    },
-  })
-
-  return NextResponse.json({ ok: true })
+  const res = NextResponse.json({ ok: true })
+  res.cookies.set(
+    CODE_COOKIE,
+    signToken({
+      email: target,
+      hash,
+      expires: Date.now() + EXPIRES_MS,
+      sentAt: Date.now(),
+      exp: Date.now() + EXPIRES_MS + COOLDOWN_MS,
+    }),
+    { httpOnly: true, sameSite: "lax", secure: SECURE, path: "/", maxAge: 660 },
+  )
+  return res
 }

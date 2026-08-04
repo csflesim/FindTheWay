@@ -17,7 +17,7 @@ Next.js App Router + **Supabase**（Postgres / Auth / Storage）正式系統，�
 ## 身分與權限
 
 - 單一 `profiles` 表（1:1 `auth.users`），`role`：`member` / `teacher` / `staff` / `admin`
-- **會員**：LINE 登入（`/m/login` → `/api/auth/line`，OAuth 後由 trigger 自動建 profile 含 LINE 頭貼與 `line_user_id`）
+- **會員**：LINE 純身份驗證 + Email 必綁。首次 LINE 登入不建帳號——身分暫存 HMAC 簽章 cookie（`src/lib/line-pending.ts`，30 分鐘），導向 `/m/bind-email` 輸入 Email + 驗證碼，通過後才 `createUser`（真實信箱、metadata 含 `line_user_id` 與 `registered_via: line`，trigger 自動建 profile）並簽入 session；之後 LINE 登入以 `profiles.line_user_id` 直查放行
 - **教師**：`/m/teacher/login`（Email 密碼或 LINE）。`/api/teacher/me` 以 email / LINE userId 比對 `teachers` 表並自動綁定 `profile_id`、把 role 升級為 `teacher`（RLS 依此放行點名等操作）
 - **後台**：`/sys-admin/login`，輸入純帳號自動補 `@findtheway.com`；proxy（`src/proxy.ts`）強制 `/sys-admin/*` 需 `staff`/`admin`，`/m` 個人頁需登入
 - RLS：公開目錄（課程/老師/banner/商品/線上課）匿名可讀；會員只能讀寫自己的訂單/票券/學員；`is_staff()`（security definer）給後台全權

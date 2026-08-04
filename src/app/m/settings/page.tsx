@@ -78,7 +78,7 @@ export default function SettingsPage() {
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) return
       setEmail(user.email ?? "")
-      setIsLineAccount((user.email ?? "").endsWith("@findtheway.app"))
+      setIsLineAccount(user.user_metadata?.registered_via === "line")
       const { data: profile } = await supabase.from("profiles")
         .select("name, line_user_id").eq("id", user.id).maybeSingle()
       if (profile) {

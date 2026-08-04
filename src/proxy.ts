@@ -61,13 +61,6 @@ export async function proxy(request: NextRequest) {
     if (role === "staff" || role === "admin") {
       return redirectWithCookies(new URL("/sys-admin", request.url), response);
     }
-    // LINE 註冊後尚未綁定真實 Email → 先完成綁定
-    if ((user.email ?? "").endsWith("@findtheway.app")) {
-      return redirectWithCookies(
-        new URL(`/m/bind-email?next=${encodeURIComponent(path)}`, request.url),
-        response,
-      );
-    }
   }
 
   return response;

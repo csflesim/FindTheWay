@@ -1,14 +1,12 @@
 'use client'
 
-import { Suspense, useEffect, useMemo, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Check, Mail } from "lucide-react"
-import { createClient } from "@/lib/supabase/client"
 
 const inputCls = "w-full px-4 py-3 text-sm bg-white border border-[#f0f0f0] rounded-xl outline-none focus:border-black transition-colors"
 
 function BindEmailContent() {
-  const supabase = useMemo(() => createClient(), [])
   const router = useRouter()
   const searchParams = useSearchParams()
   const rawNext = searchParams.get("next") ?? "/m"
@@ -22,14 +20,12 @@ function BindEmailContent() {
   const [error, setError] = useState("")
   const [done, setDone] = useState(false)
 
-  // 未登入導回登入頁；已綁定真實信箱者直接放行
+  // LINE 暫存身分逾時或不存在 → 回登入頁重新用 LINE 登入
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) { router.replace("/m/login"); return }
-      if (user.email && !user.email.endsWith("@findtheway.app")) {
-        router.replace(next)
-      }
-    })
+    fetch("/api/member/email-code")
+      .then(r => r.json())
+      .then(d => { if (!d.pending) router.replace("/m/login") })
+      .catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -71,8 +67,6 @@ function BindEmailContent() {
     const d = await res.json()
     setBusy(false)
     if (!res.ok || !d.ok) { setError(d.error ?? "驗證失敗"); return }
-    // 更新 session 讓新 email 生效
-    await supabase.auth.refreshSession()
     setDone(true)
     setTimeout(() => router.replace(next), 1200)
   }
@@ -83,7 +77,7 @@ function BindEmailContent() {
         <div className="w-14 h-14 rounded-full bg-black flex items-center justify-center mb-5">
           <Check size={28} className="text-white" />
         </div>
-        <h2 className="text-lg font-medium mb-2">Email 綁定完成</h2>
+        <h2 className="text-lg font-medium mb-2">註冊完成</h2>
         <p className="text-sm text-[#aaa]">課程與訂單通知將寄送至 {email.trim()}</p>
       </div>
     )
