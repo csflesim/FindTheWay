@@ -42,6 +42,14 @@ export async function POST(req: NextRequest) {
     subject: "【忙碌不迷路藝術工作坊】Email 驗證碼",
     text: `您的驗證碼是：${code}\n\n請在 10 分鐘內回到頁面輸入完成綁定。若非本人操作請忽略此信。`,
   })
+  // 記入發送紀錄（不含驗證碼內容）
+  try {
+    await admin.from("message_logs").insert({
+      channel: "email", recipient: target, subject: "Email 綁定驗證碼",
+      status: result.ok ? "sent" : "failed",
+      error: result.ok ? null : result.error,
+    })
+  } catch { /* ignore */ }
   if (!result.ok) {
     return NextResponse.json({ error: `寄送失敗：${result.error}` }, { status: 502 })
   }

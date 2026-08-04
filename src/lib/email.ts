@@ -33,13 +33,19 @@ async function resolveSmtpConfig(): Promise<SmtpRuntimeConfig> {
   // 讀取後台儲存的 SMTP 設定（含密碼解密）；env vars 優先由 smtp-config 模組處理
   const cfg = await loadSmtpConfig()
   const port = Number(cfg.port || "587")
+  // 寄件人：填純名稱（無 @）時自動組成 "名稱 <帳號>"，避免不合法 From 被判垃圾信
+  const rawFrom = (cfg.from ?? "").trim()
+  const account = cfg.user || "noreply@findtheway.app"
+  const fromEmail = !rawFrom
+    ? account
+    : rawFrom.includes("@") ? rawFrom : `"${rawFrom}" <${account}>`
   return {
     host: cfg.host,
     port,
     secure: process.env.SMTP_SECURE === "true" || port === 465,
     user: cfg.user,
     pass: cfg.pass,
-    fromEmail: cfg.from || cfg.user || "noreply@findtheway.app",
+    fromEmail,
   }
 }
 
