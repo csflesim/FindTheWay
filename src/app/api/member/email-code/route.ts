@@ -14,6 +14,10 @@ export async function POST(req: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: "請先登入" }, { status: 401 })
+  // 只有 LINE 註冊的合成帳號需要綁定，避免一般帳號（含管理員）誤觸換信箱
+  if (!(user.email ?? "").endsWith("@findtheway.app")) {
+    return NextResponse.json({ error: "此帳號已綁定 Email，不需重新綁定" }, { status: 403 })
+  }
 
   const { email } = await req.json() as { email?: string }
   const target = (email ?? "").trim().toLowerCase()
