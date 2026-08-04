@@ -296,7 +296,7 @@ export default function MessagesPage() {
     if (eTarget === "specific" && !eTo.trim()) return
     setESending(true); setSendResult(null)
     try {
-      const res = await fetch("/api/email/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: eTarget === "broadcast" ? "all@findtheway.app" : eTo.trim(), subject: eSubject.trim(), html: `<pre style="font-family:sans-serif;white-space:pre-wrap">${eBody}</pre>`, text: eBody }) })
+      const res = await fetch("/api/email/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ broadcast: eTarget === "broadcast", to: eTarget === "specific" ? eTo.trim() : undefined, subject: eSubject.trim(), html: `<pre style="font-family:sans-serif;white-space:pre-wrap">${eBody}</pre>`, text: eBody }) })
       const data = await res.json()
       const ok = !!data.ok
       setSendResult({ ok, msg: ok ? "郵件已成功送出！" : (data.error ?? "發送失敗") })

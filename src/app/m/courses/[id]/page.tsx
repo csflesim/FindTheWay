@@ -100,7 +100,7 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
     setSubmitting(true)
     const isTicket = payMode === "ticket" && selectedOrder
     const ticketOrder = ticketOrders.find(o => o.id === selectedOrder)
-    const { error } = await supabase.from("orders").insert({
+    const { data, error } = await supabase.from("orders").insert({
       member_id: me.id,
       course_id: course.id,
       item_name: course.title,
@@ -109,12 +109,18 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
       status: "待確認",
       pay_method: isTicket ? null : payMethod,
       notes: isTicket ? `課堂券扣抵（${ticketOrder?.orderNo ?? ""}）` : "單堂直購",
-    })
+    }).select("id").single()
     setSubmitting(false)
     if (error) {
       alert(`報名失敗：${error.message}`)
       return
     }
+    // 觸發「報名建立」工作流（不阻塞畫面）
+    fetch("/api/workflows/fire", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "order", subtype: "created", orderId: data.id }),
+    }).catch(() => {})
     setStep("done")
   }
 

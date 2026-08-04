@@ -118,21 +118,17 @@ export default function AttendancePage() {
   async function save() {
     if (!occ || saving) return
     setSaving(true)
+    // 經 API 儲存：出席自動核銷課堂券、改缺席自動退券
     const records = students.map(s => ({ name: s.name, status: toStatus(s) }))
-    let error
-    if (rowId) {
-      ;({ error } = await supabase.from("course_attendance").update({ records }).eq("id", rowId))
-    } else {
-      const { data, error: insErr } = await supabase
-        .from("course_attendance")
-        .insert({ course_id: occ.courseId, date: attDate(occ.dateStr), records })
-        .select("id")
-        .single()
-      error = insErr
-      if (data) setRowId(data.id)
-    }
+    const res = await fetch("/api/attendance/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ courseId: occ.courseId, date: attDate(occ.dateStr), records }),
+    })
+    const d = await res.json()
     setSaving(false)
-    if (error) { alert(`儲存失敗：${error.message}`); return }
+    if (!res.ok || !d.ok) { alert(`儲存失敗：${d.error ?? res.status}`); return }
+    setRowId(d.rowId)
     setSaved(true)
   }
 

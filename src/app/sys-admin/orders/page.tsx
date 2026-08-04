@@ -155,19 +155,15 @@ export default function OrdersPage() {
     if (saving) return
     setSaving(true)
     try {
-      const { error } = await supabase.from("orders")
-        .update({ status: "已付款", pay_method: method, paid_at: new Date().toISOString() })
-        .eq("id", order.id)
-      if (error) throw new Error(error.message)
+      // 伺服器端統一處理：發券、課堂券扣抵核銷、報名人數同步、工作流觸發
+      const res = await fetch("/api/orders/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: order.id, payMethod: method }),
+      })
+      const d = await res.json()
+      if (!res.ok || !d.ok) throw new Error(d.error ?? `確認失敗（${res.status}）`)
 
-      // 券包訂單發券（單堂直購 product_id 為 null，不發券）
-      const pkg = products.find(p => p.id === order.productId)
-      if (pkg && order.tickets.length === 0) {
-        const errMsg = await issueTickets(supabase, {
-          id: order.id, orderNo: order.orderNo, studentId: order.studentId, qty: order.qty,
-        }, pkg.validity_months)
-        if (errMsg) throw new Error(errMsg)
-      }
       const fresh = await refetchOrder(order.id)
       if (fresh) setOrders(prev => prev.map(o => o.id === order.id ? fresh : o))
       setDetail(null)
@@ -183,6 +179,12 @@ export default function OrdersPage() {
     if (error) { alert(`取消失敗：${error.message}`); return }
     setOrders(prev => prev.map(o => o.id === id ? { ...o, payStatus: "已取消" as PayStatus } : o))
     setDetail(null)
+    // 觸發「報名取消」工作流（不阻塞 UI）
+    fetch("/api/workflows/fire", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "order", subtype: "cancelled", orderId: id }),
+    }).catch(() => {})
   }
 
   function handleAfterSalesProcessed(updated: Order) {

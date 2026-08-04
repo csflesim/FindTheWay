@@ -71,7 +71,7 @@ export default function BuyTicketsPage() {
   async function handleConfirm() {
     if (!pkg || !memberId || submitting) return
     setSubmitting(true)
-    const { error } = await supabase.from("orders").insert({
+    const { data, error } = await supabase.from("orders").insert({
       member_id: memberId,
       product_id: pkg.id,
       item_name: pkg.name,
@@ -79,12 +79,18 @@ export default function BuyTicketsPage() {
       amount: pkg.price,
       status: "待確認",
       notes: "前台下單",
-    })
+    }).select("id").single()
     setSubmitting(false)
     if (error) {
       alert(`下單失敗：${error.message}`)
       return
     }
+    // 觸發「報名建立」工作流（不阻塞畫面）
+    fetch("/api/workflows/fire", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "order", subtype: "created", orderId: data.id }),
+    }).catch(() => {})
     setStep("done")
   }
 

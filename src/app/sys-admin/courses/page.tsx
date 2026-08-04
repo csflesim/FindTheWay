@@ -583,9 +583,16 @@ export default function CoursesPage() {
     setSessionIdx(0)
   }
 
-  async function persistRecords(sessionId: string, records: AttendRecord[]) {
-    const { error } = await supabase.from("course_attendance").update({ records }).eq("id", sessionId)
-    if (error) alert(`儲存出席狀態失敗：${error.message}`)
+  // 經 API 儲存：出席自動核銷課堂券、改缺席自動退券
+  async function persistRecords(session: Session, records: AttendRecord[]) {
+    if (!attendCourse) return
+    const res = await fetch("/api/attendance/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ courseId: attendCourse.id, date: session.date, records }),
+    })
+    const d = await res.json()
+    if (!res.ok || !d.ok) alert(`儲存出席狀態失敗：${d.error ?? res.status}`)
   }
 
   function setStatus(sidx: number, name: string, status: AttendRecord["status"]) {
@@ -593,7 +600,7 @@ export default function CoursesPage() {
       const next = [...prev]
       const records = next[sidx].records.map(r => r.name === name ? { ...r, status } : r)
       next[sidx] = { ...next[sidx], records }
-      persistRecords(next[sidx].id, records)
+      persistRecords(next[sidx], records)
       return next
     })
   }
@@ -604,7 +611,7 @@ export default function CoursesPage() {
       const next = [...prev]
       const records = [...next[sidx].records, { name: newName.trim(), status: "出席" as const }]
       next[sidx] = { ...next[sidx], records }
-      persistRecords(next[sidx].id, records)
+      persistRecords(next[sidx], records)
       return next
     })
     setNewName("")
@@ -615,7 +622,7 @@ export default function CoursesPage() {
       const next = [...prev]
       const records = next[sidx].records.filter(r => r.name !== name)
       next[sidx] = { ...next[sidx], records }
-      persistRecords(next[sidx].id, records)
+      persistRecords(next[sidx], records)
       return next
     })
   }
@@ -1006,9 +1013,10 @@ export default function CoursesPage() {
                   </Field>
 
                   <div className="grid grid-cols-2 gap-3">
-                    <Field label="已報名">
-                      <input type="number" value={form.enrolled} onChange={e => setForm(f => ({ ...f, enrolled: parseInt(e.target.value) || 0 }))}
-                        className={inputCls} />
+                    <Field label="已報名（依付款訂單自動計算）">
+                      <div className="w-full px-3 py-2.5 text-sm bg-[#f5f5f5] border border-[#f0f0f0] rounded-xl text-[#666]">
+                        {form.enrolled} 人
+                      </div>
                     </Field>
                     <Field label="人數上限">
                       <input type="number" value={form.capacity} onChange={e => setForm(f => ({ ...f, capacity: parseInt(e.target.value) || 0 }))}
