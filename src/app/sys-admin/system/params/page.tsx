@@ -175,11 +175,15 @@ export default function ParamsPage() {
       body[p.key] = allRefs.current[p.key]?.value ?? ""
     }
     try {
-      await fetch("/api/admin/params", {
+      const res = await fetch("/api/admin/params", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       })
+      if (!res.ok) {
+        alert(res.status === 401 ? "登入已過期，請重新登入後台再儲存。" : `儲存失敗（${res.status}）`)
+        return
+      }
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } finally {

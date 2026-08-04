@@ -164,7 +164,24 @@ export default function WorkflowBuilder({ config }: { config: WorkflowConfig }) 
   const [running, setRunning] = useState(false)
   const [lastRun, setLastRun] = useState<string | null>(null)
   const [runCount, setRunCount] = useState(0)
-  const [log, setLog] = useState<{ id: string; text: string; tone: "info" | "ok" | "branch" }[]>([])
+  const [log, setLog] = useState<{ id: string; text: string; tone: "info" | "ok" | "branch" | "err" }[]>([])
+
+  // 測試觸發收件目標（有填才會真的發送，否則純模擬）
+  const [testEmail, setTestEmail] = useState("")
+  const [testLineId, setTestLineId] = useState("")
+  useEffect(() => {
+    try {
+      const s = localStorage.getItem("ftw.workflow-test.v1")
+      if (s) {
+        const p = JSON.parse(s)
+        if (typeof p.email === "string") setTestEmail(p.email)
+        if (typeof p.lineId === "string") setTestLineId(p.lineId)
+      }
+    } catch {}
+  }, [])
+  useEffect(() => {
+    try { localStorage.setItem("ftw.workflow-test.v1", JSON.stringify({ email: testEmail, lineId: testLineId })) } catch {}
+  }, [testEmail, testLineId])
 
   const wrapRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ id: string; offX: number; offY: number } | null>(null)
@@ -281,22 +298,79 @@ export default function WorkflowBuilder({ config }: { config: WorkflowConfig }) 
   }
   const deleteEdge = (id: string) => setEdges(prev => prev.filter(e => e.id !== id))
 
+  // 真實寄送：套用模板內容打 /api/email/send、/api/line/send
+  const findTpl = (name?: string) => storedTpls.find(t => t.name === name)
+
+  const sendRealEmail = async (tplName?: string): Promise<{ ok: boolean; error?: string }> => {
+    const tpl = findTpl(tplName)
+    try {
+      const res = await fetch("/api/email/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: testEmail.trim(),
+          subject: tpl?.emailSubject || `【工作流測試】${tplName ?? "通知"}`,
+          html: tpl?.emailHtml || undefined,
+          text: tpl?.emailHtml ? undefined : `這是工作流「${tplName ?? "通知"}」的測試信。`,
+        }),
+      })
+      const d = await res.json()
+      return d.ok ? { ok: true } : { ok: false, error: d.error }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  }
+
+  const sendRealLine = async (tplName?: string): Promise<{ ok: boolean; error?: string }> => {
+    const tpl = findTpl(tplName)
+    try {
+      const res = await fetch("/api/line/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: testLineId.trim(),
+          messages: [{ type: "text", text: tpl?.lineText || `這是工作流「${tplName ?? "通知"}」的測試訊息。` }],
+        }),
+      })
+      const d = await res.json()
+      return d.ok ? { ok: true } : { ok: false, error: d.error ?? JSON.stringify(d) }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  }
+
   const runFlow = async () => {
     if (running) return
     const trigger = nodes.find(n => n.kind === "trigger")
     if (!trigger) return showToast("流程缺少觸發節點", "error")
+    const realEmail = !!testEmail.trim()
+    const realLine  = !!testLineId.trim()
     setRunning(true); setLog([])
-    const pushLog = (text: string, tone: "info" | "ok" | "branch" = "info") => setLog(prev => [...prev, { id: nid("l"), text, tone }])
+    const pushLog = (text: string, tone: "info" | "ok" | "branch" | "err" = "info") => setLog(prev => [...prev, { id: nid("l"), text, tone }])
     const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+
+    const doEmail = async (tplName?: string) => {
+      if (!realEmail) { pushLog(`✉️ 寄送 Email（套用「${tplName}」）→ 模擬呼叫`, "ok"); return }
+      pushLog(`✉️ 寄送 Email（「${tplName}」）→ ${testEmail.trim()}…`, "info")
+      const r = await sendRealEmail(tplName)
+      pushLog(r.ok ? `✉️ Email 已寄出 ✓` : `✉️ Email 失敗：${r.error}`, r.ok ? "ok" : "err")
+    }
+    const doLine = async (tplName?: string) => {
+      if (!realLine) { pushLog(`🟢 推播 LINE（「${tplName}」）→ 模擬呼叫`, "ok"); return }
+      pushLog(`🟢 推播 LINE（「${tplName}」）→ ${testLineId.trim().slice(0, 8)}…`, "info")
+      const r = await sendRealLine(tplName)
+      pushLog(r.ok ? `🟢 LINE 已送出 ✓` : `🟢 LINE 失敗：${r.error}`, r.ok ? "ok" : "err")
+    }
+
     let current: FlowNode | undefined = trigger; let steps = 0
     while (current && steps < 50) {
       steps++; setActiveId(current.id)
       if (current.kind === "trigger")    pushLog(`⚡ 觸發：${nodeSubtitle(current)}`, "info")
-      else if (current.kind === "email")  pushLog(`✉️ 寄送 Email（套用「${current.template}」）→ 呼叫 Resend`, "ok")
-      else if (current.kind === "line")   pushLog(`🟢 推播 LINE（「${current.template}」）→ 呼叫 Messaging API`, "ok")
-      else if (current.kind === "notify") pushLog(`📣 雙通道通知 → Email（「${current.emailTemplate}」）＋ LINE（「${current.lineTemplate}」）`, "ok")
+      else if (current.kind === "email")  await doEmail(current.template)
+      else if (current.kind === "line")   await doLine(current.template)
+      else if (current.kind === "notify") { pushLog(`📣 雙通道通知`, "info"); await doEmail(current.emailTemplate); await doLine(current.lineTemplate) }
       else if (current.kind === "social") pushLog(`💬 ${SOCIAL_LABEL[current.socialPlatform ?? "ig"]} ${current.socialAction === "reply" ? "公開回覆" : "私訊"} → 模擬發送`, "ok")
-      else if (current.kind === "delay")  pushLog(`⏱️ 等待 ${nodeSubtitle(current)} 後繼續…`, "info")
+      else if (current.kind === "delay")  pushLog(`⏱️ 等待 ${nodeSubtitle(current)} 後繼續…（測試模式跳過等待）`, "info")
       else if (current.kind === "condition") pushLog(`🔀 判斷 ${nodeSubtitle(current)} → 成立，走「是」分支`, "branch")
       await sleep(650)
       const here: FlowNode = current
@@ -306,7 +380,7 @@ export default function WorkflowBuilder({ config }: { config: WorkflowConfig }) 
     }
     setActiveId(null); pushLog("✅ 流程執行結束", "ok")
     setRunning(false); setLastRun(new Date().toTimeString().slice(0, 8)); setRunCount(c => c + 1)
-    showToast("流程模擬執行完成", "success")
+    showToast(realEmail || realLine ? "測試觸發完成（含真實發送）" : "流程模擬執行完成", "success")
   }
 
   const inputCls = "w-full px-3 py-2 text-sm border border-[#f0f0f0] rounded-lg outline-none focus:border-black transition-colors"
@@ -388,7 +462,20 @@ export default function WorkflowBuilder({ config }: { config: WorkflowConfig }) 
               </button>
             ))}
             <span className="flex-1" />
-            <button onClick={runFlow} disabled={running} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-black hover:bg-[#222] disabled:opacity-50 transition">
+            <input
+              value={testEmail}
+              onChange={e => setTestEmail(e.target.value)}
+              placeholder="測試 Email（選填）"
+              className="w-44 px-2.5 py-1.5 rounded-lg border border-[#f0f0f0] text-xs outline-none focus:border-black transition bg-white"
+            />
+            <input
+              value={testLineId}
+              onChange={e => setTestLineId(e.target.value)}
+              placeholder="測試 LINE User ID（選填）"
+              className="w-48 px-2.5 py-1.5 rounded-lg border border-[#f0f0f0] text-xs outline-none focus:border-black transition bg-white"
+            />
+            <button onClick={runFlow} disabled={running} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-black hover:bg-[#222] disabled:opacity-50 transition"
+              title={testEmail.trim() || testLineId.trim() ? "會真實發送到填入的目標" : "未填目標，僅模擬執行"}>
               {running ? "執行中…" : "▶ 測試觸發"}
             </button>
           </div>
@@ -469,12 +556,13 @@ export default function WorkflowBuilder({ config }: { config: WorkflowConfig }) 
               </div>
               <div className="bg-white rounded-xl border border-[#f0f0f0] p-4 flex-1 min-h-0 flex flex-col">
                 <p className="text-xs text-[#aaa] mb-3 flex items-center gap-2">
-                  <span className={`w-2 h-2 rounded-full ${running ? "bg-green-500 animate-pulse" : "bg-[#ddd]"}`} />執行日誌（模擬）
+                  <span className={`w-2 h-2 rounded-full ${running ? "bg-green-500 animate-pulse" : "bg-[#ddd]"}`} />
+                  執行日誌{testEmail.trim() || testLineId.trim() ? "（真實發送）" : "（模擬）"}
                 </p>
                 <div className="flex-1 overflow-y-auto bg-[#fafafa] rounded-lg p-3 text-[11px] font-mono leading-relaxed border border-[#f0f0f0]">
-                  {log.length === 0 ? <span className="text-[#ccc] italic">點「測試觸發」模擬執行流程…</span> : (
+                  {log.length === 0 ? <span className="text-[#ccc] italic">點「測試觸發」執行流程；在上方填入測試 Email / LINE User ID 可真實發送。</span> : (
                     <div className="flex flex-col gap-1.5">
-                      {log.map(l => <div key={l.id} className={l.tone === "ok" ? "text-green-600" : l.tone === "branch" ? "text-indigo-500" : "text-[#555]"}>{l.text}</div>)}
+                      {log.map(l => <div key={l.id} className={l.tone === "ok" ? "text-green-600" : l.tone === "err" ? "text-red-500" : l.tone === "branch" ? "text-indigo-500" : "text-[#555]"}>{l.text}</div>)}
                     </div>
                   )}
                 </div>
