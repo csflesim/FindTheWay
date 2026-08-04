@@ -1,10 +1,11 @@
 'use client'
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Plus, X } from "lucide-react"
+import { createClient } from "@/lib/supabase/client"
 
 type TicketPackage = {
-  id: number
+  id: string
   name: string
   qty: number
   price: number
@@ -16,12 +17,18 @@ type TicketPackage = {
   notes?: string
 }
 
-const INITIAL_PACKAGES: TicketPackage[] = [
-  { id: 1, name: "單堂試課券",  qty: 1,  price: 1200,  expireMonths: 3,  cancelHours: 24, transferable: false, active: true,  sold: 38 },
-  { id: 2, name: "5堂精選包",   qty: 5,  price: 5500,  expireMonths: 6,  cancelHours: 24, transferable: false, active: true,  sold: 24 },
-  { id: 3, name: "10堂體驗包",  qty: 10, price: 9800,  expireMonths: 12, cancelHours: 24, transferable: true,  active: true,  sold: 61 },
-  { id: 4, name: "20堂年繳包",  qty: 20, price: 18000, expireMonths: 12, cancelHours: 48, transferable: true,  active: false, sold: 12 },
-]
+type ProductRow = {
+  id: string
+  name: string
+  sessions: number
+  price: number
+  validity_months: number
+  cancel_hours: number
+  transferable: boolean
+  active: boolean
+  notes: string | null
+  sort_order: number
+}
 
 const EMPTY_FORM = {
   name: "",
@@ -67,11 +74,32 @@ const inputCls = "w-full px-3 py-2.5 text-sm bg-[#fafaf9] border border-[#f0f0f0
 // ── Main Page ────────────────────────────────────────
 
 export default function TicketsPage() {
-  const [packages, setPackages] = useState<TicketPackage[]>(INITIAL_PACKAGES)
+  const supabase = useMemo(() => createClient(), [])
+  const [packages, setPackages] = useState<TicketPackage[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
   const [drawer, setDrawer] = useState<"add" | "edit" | null>(null)
   const [editing, setEditing] = useState<TicketPackage | null>(null)
   const [form, setForm] = useState(EMPTY_FORM)
-  const [nextId, setNextId] = useState(10)
+
+  useEffect(() => {
+    Promise.all([
+      supabase.from("products").select("*").order("sort_order"),
+      supabase.from("orders").select("product_id, status"),
+    ]).then(([pRes, oRes]) => {
+      if (pRes.error) { console.error("載入商品失敗:", pRes.error.message); setLoading(false); return }
+      const orders = (oRes.data ?? []) as { product_id: string | null; status: string }[]
+      const soldOf = (id: string) =>
+        orders.filter(o => o.product_id === id && (o.status === "已付款" || o.status === "已售後")).length
+      setPackages((pRes.data as ProductRow[]).map(r => ({
+        id: r.id, name: r.name, qty: r.sessions, price: r.price,
+        expireMonths: r.validity_months, cancelHours: r.cancel_hours,
+        transferable: r.transferable, active: r.active,
+        sold: soldOf(r.id), notes: r.notes ?? "",
+      })))
+      setLoading(false)
+    })
+  }, [supabase])
 
   function openAdd() {
     setForm(EMPTY_FORM)
@@ -98,26 +126,42 @@ export default function TicketsPage() {
     setEditing(null)
   }
 
-  function saveAdd() {
-    const pkg: TicketPackage = {
-      id: nextId,
-      name: form.name,
-      qty: form.qty,
+  function formToRow() {
+    return {
+      name: form.name.trim(),
+      sessions: form.qty,
       price: form.price,
-      expireMonths: form.expireMonths,
-      cancelHours: form.cancelHours,
+      validity_months: form.expireMonths,
+      cancel_hours: form.cancelHours,
       transferable: form.transferable,
       active: form.active,
-      sold: 0,
-      notes: form.notes || undefined,
+      notes: form.notes || null,
     }
-    setPackages(prev => [...prev, pkg])
-    setNextId(n => n + 1)
+  }
+
+  async function saveAdd() {
+    if (saving) return
+    setSaving(true)
+    const { data, error } = await supabase.from("products")
+      .insert({ ...formToRow(), sort_order: packages.length + 1 })
+      .select().single()
+    setSaving(false)
+    if (error) { alert(`新增失敗：${error.message}`); return }
+    const r = data as ProductRow
+    setPackages(prev => [...prev, {
+      id: r.id, name: r.name, qty: r.sessions, price: r.price,
+      expireMonths: r.validity_months, cancelHours: r.cancel_hours,
+      transferable: r.transferable, active: r.active, sold: 0, notes: r.notes ?? "",
+    }])
     close()
   }
 
-  function saveEdit() {
-    if (!editing) return
+  async function saveEdit() {
+    if (!editing || saving) return
+    setSaving(true)
+    const { error } = await supabase.from("products").update(formToRow()).eq("id", editing.id)
+    setSaving(false)
+    if (error) { alert(`儲存失敗：${error.message}`); return }
     setPackages(prev => prev.map(p =>
       p.id === editing.id
         ? { ...p, name: form.name, qty: form.qty, price: form.price, expireMonths: form.expireMonths, cancelHours: form.cancelHours, transferable: form.transferable, active: form.active, notes: form.notes || undefined }
@@ -126,7 +170,11 @@ export default function TicketsPage() {
     close()
   }
 
-  function toggleActive(id: number) {
+  async function toggleActive(id: string) {
+    const target = packages.find(p => p.id === id)
+    if (!target) return
+    const { error } = await supabase.from("products").update({ active: !target.active }).eq("id", id)
+    if (error) { alert(`更新失敗：${error.message}`); return }
     setPackages(prev => prev.map(p => p.id === id ? { ...p, active: !p.active } : p))
   }
 
@@ -153,6 +201,7 @@ export default function TicketsPage() {
       </div>
 
       {/* Cards grid */}
+      {loading && <p className="text-sm text-[#ccc]">載入中…</p>}
       <div className="grid md:grid-cols-2 gap-4">
         {packages.map((pkg) => (
           <div
@@ -237,7 +286,7 @@ export default function TicketsPage() {
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <Field label="有效期（月，0不過期）">
+              <Field label="有效期（月）">
                 <input
                   type="number" min={0}
                   className={inputCls}
@@ -311,10 +360,10 @@ export default function TicketsPage() {
             </button>
             <button
               onClick={drawer === "add" ? saveAdd : saveEdit}
-              disabled={!form.name || form.qty < 1 || form.price < 0}
+              disabled={saving || !form.name || form.qty < 1 || form.price < 0}
               className="flex-1 py-2.5 text-sm bg-black text-white rounded-xl hover:bg-[#222] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
-              {drawer === "add" ? "新增" : "儲存"}
+              {saving ? "儲存中…" : drawer === "add" ? "新增" : "儲存"}
             </button>
           </div>
         </Drawer>

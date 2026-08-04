@@ -217,8 +217,11 @@ create table public.products (
   sessions        int not null,                 -- 堂數
   price           int not null,
   validity_months int not null default 12,
+  cancel_hours    int not null default 24,      -- 課前取消時限
+  transferable    boolean not null default false,
   active          boolean not null default true,
   sort_order      int not null default 0,
+  notes           text,
   created_at      timestamptz not null default now()
 );
 
