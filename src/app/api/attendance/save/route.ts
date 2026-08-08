@@ -28,14 +28,16 @@ export async function POST(req: NextRequest) {
   const admin = createAdminClient()
 
   // ── 權限：staff/admin，或該課程授課教師 ──
-  const { data: profile } = await admin.from("profiles").select("role").eq("id", user.id).maybeSingle()
+  const { data: profile } = await admin.from("profiles").select("role, name").eq("id", user.id).maybeSingle()
   const isStaff = !!profile && ["staff", "admin"].includes(profile.role)
+  let actor = `${profile?.name || "後台"}（後台）`
   if (!isStaff) {
-    const { data: teacher } = await admin.from("teachers").select("id").eq("profile_id", user.id).maybeSingle()
+    const { data: teacher } = await admin.from("teachers").select("id, name").eq("profile_id", user.id).maybeSingle()
     if (!teacher) return NextResponse.json({ error: "forbidden" }, { status: 403 })
     const { data: link } = await admin.from("course_teachers")
       .select("course_id").eq("course_id", courseId).eq("teacher_id", teacher.id).maybeSingle()
     if (!link) return NextResponse.json({ error: "非此課程授課教師" }, { status: 403 })
+    actor = `${teacher.name}（教師）`
   }
 
   const { data: course } = await admin.from("courses").select("types, title").eq("id", courseId).maybeSingle()
@@ -60,9 +62,10 @@ export async function POST(req: NextRequest) {
         if (r.status === "出席" || r.status === "缺席") {
           // 要核銷：待使用（或誤退回的未使用）→ 已使用
           if (t.status !== "已使用") {
+            const redeemEvent = r.status === "出席" ? "核銷（出席）" : "核銷（缺席）"
             const history = t.status === "未使用"
-              ? withEvent(withEvent(t.history, "報名", `${course.title} ${date.replace(/-/g, "/")}`), r.status === "出席" ? "核銷（出席）" : "核銷（缺席）")
-              : withEvent(t.history, r.status === "出席" ? "核銷（出席）" : "核銷（缺席）")
+              ? withEvent(withEvent(t.history, "報名", `${course.title} ${date.replace(/-/g, "/")}`, actor), redeemEvent, undefined, actor)
+              : withEvent(t.history, redeemEvent, undefined, actor)
             const { error } = await admin.from("tickets").update({
               status: "已使用",
               used_at: new Date().toISOString(),
@@ -80,7 +83,7 @@ export async function POST(req: NextRequest) {
               used_at: null,
               course_id: null,
               session_date: null,
-              history: withEvent(t.history, "延期退回", `${course.title} ${date.replace(/-/g, "/")}`),
+              history: withEvent(t.history, "延期退回", `${course.title} ${date.replace(/-/g, "/")}`, actor),
             }).eq("id", t.id)
             if (error) return NextResponse.json({ error: `退回失敗：${error.message}` }, { status: 500 })
           }

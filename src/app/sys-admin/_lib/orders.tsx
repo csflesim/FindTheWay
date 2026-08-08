@@ -7,7 +7,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 export type PayStatus = "已付款" | "待確認" | "已退款" | "已取消" | "已售後"
 export type TicketStatus = "未使用" | "待使用" | "已使用" | "已失效"
 
-export type TicketEvent = { at: string; event: string; note?: string }
+export type TicketEvent = { at: string; event: string; note?: string; by?: string }
 
 export type Ticket = {
   id: string
@@ -19,6 +19,7 @@ export type Ticket = {
   courseTitle?: string    // 待使用時綁定的課程
   sessionDate?: string    // "YYYY/MM/DD"
   history: TicketEvent[]
+  lastEvent?: TicketEvent // 最後一次異動（含異動者）
 }
 
 export type AfterSalesRecord = {
@@ -142,6 +143,7 @@ export function orderFromRow(r: OrderRow): Order {
         courseTitle: t.course?.title ?? undefined,
         sessionDate: t.session_date ? t.session_date.replace(/-/g, "/") : undefined,
         history: t.history ?? [],
+        lastEvent: (t.history ?? []).length > 0 ? t.history![t.history!.length - 1] : undefined,
       })),
   }
 }
@@ -165,7 +167,7 @@ export async function issueTickets(
     student_id: order.studentId,
     status: "未使用" as TicketStatus,
     expires_at: expiresAt,
-    history: [{ at: new Date().toISOString(), event: "發券", note: `訂單 ${order.orderNo}` }],
+    history: [{ at: new Date().toISOString(), event: "發券", note: `訂單 ${order.orderNo}`, by: "後台" }],
   }))
   const { error } = await supabase.from("tickets").insert(rows)
   return error ? error.message : null

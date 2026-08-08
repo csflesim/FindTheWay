@@ -17,8 +17,9 @@ export async function POST(req: NextRequest) {
   if (!ticketId) return NextResponse.json({ error: "缺少 ticketId" }, { status: 400 })
 
   const admin = createAdminClient()
-  const { data: profile } = await admin.from("profiles").select("role").eq("id", user.id).maybeSingle()
+  const { data: profile } = await admin.from("profiles").select("role, name").eq("id", user.id).maybeSingle()
   const isStaff = !!profile && ["staff", "admin"].includes(profile.role)
+  const actor = isStaff ? `${profile?.name || "後台"}（後台）` : `${profile?.name || "會員"}（會員）`
 
   const { data: t } = await admin
     .from("tickets")
@@ -55,7 +56,7 @@ export async function POST(req: NextRequest) {
     status: "未使用",
     course_id: null,
     session_date: null,
-    history: withEvent(t.history, "取消上課", isStaff && order.member_id !== user.id ? "後台代辦" : undefined),
+    history: withEvent(t.history, "取消上課", undefined, actor),
   }).eq("id", ticketId).eq("status", "待使用")
   if (error) return NextResponse.json({ error: `取消失敗：${error.message}` }, { status: 500 })
 

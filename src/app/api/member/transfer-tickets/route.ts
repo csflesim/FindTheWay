@@ -57,13 +57,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `可轉讓票券不足（剩 ${transferable.length} 張）` }, { status: 400 })
   }
 
+  const { data: actorProfile } = await admin.from("profiles").select("name").eq("id", user.id).maybeSingle()
+  const actor = `${actorProfile?.name || "會員"}（會員）`
   const picked = transferable.slice(0, count)
   for (const t of picked) {
     const { error } = await admin
       .from("tickets")
       .update({
         transferred_to: toStudentId,
-        history: withEvent(t.history, "轉讓", `轉讓給 ${student.name}`),
+        history: withEvent(t.history, "轉讓", `轉讓給 ${student.name}`, actor),
       })
       .eq("id", t.id)
     if (error) {

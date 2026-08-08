@@ -103,7 +103,7 @@ function TicketDrawer({ ticket, order, onClose, onChanged }: {
                     {i < events.length - 1 && <div className="w-px flex-1 bg-[#eee]" />}
                   </div>
                   <div className="pb-4">
-                    <p className="text-sm">{e.event}</p>
+                    <p className="text-sm">{e.event}{e.by ? <span className="text-[#999] text-xs ml-1.5">by {e.by}</span> : null}</p>
                     <p className="text-[11px] text-[#aaa] mt-0.5">{fmtEventTime(e.at)}{e.note ? ` · ${e.note}` : ""}</p>
                   </div>
                 </div>
@@ -244,13 +244,13 @@ export default function VouchersPage() {
 
       {/* Desktop table */}
       <div className="hidden md:block bg-white rounded-xl border border-[#f0f0f0] overflow-hidden">
-        <div className="grid grid-cols-[1.3fr_0.8fr_0.9fr_1.1fr_0.9fr_0.9fr_0.9fr] gap-3 px-5 py-3 border-b border-[#f5f5f5] text-[11px] text-[#aaa] uppercase tracking-widest">
-          <span>券號</span><span>學員</span><span>所屬訂單</span><span>課程組合</span><span>使用情況</span><span>有效期限</span><span>使用時間</span>
+        <div className="grid grid-cols-[1.2fr_0.7fr_0.8fr_1fr_0.8fr_0.8fr_0.8fr_1.1fr] gap-3 px-5 py-3 border-b border-[#f5f5f5] text-[11px] text-[#aaa] uppercase tracking-widest">
+          <span>券號</span><span>學員</span><span>所屬訂單</span><span>課程組合</span><span>使用情況</span><span>有效期限</span><span>使用時間</span><span>最後異動</span>
         </div>
         <div className="divide-y divide-[#f5f5f5]">
           {filtered.length === 0 && <p className="px-5 py-6 text-sm text-[#ccc]">查無課堂券</p>}
           {filtered.map(({ ticket: t, order: o }) => (
-            <div key={t.no} className="grid grid-cols-[1.3fr_0.8fr_0.9fr_1.1fr_0.9fr_0.9fr_0.9fr] gap-3 items-center px-5 py-3.5">
+            <div key={t.no} className="grid grid-cols-[1.2fr_0.7fr_0.8fr_1fr_0.8fr_0.8fr_0.8fr_1.1fr] gap-3 items-center px-5 py-3.5">
               <button
                 onClick={() => setSelectedTicket({ ticket: t, order: o })}
                 className="text-xs font-mono text-[#555] underline underline-offset-2 decoration-[#e0e0e0] hover:text-black hover:decoration-black transition-colors text-left"
@@ -266,6 +266,14 @@ export default function VouchersPage() {
               </span>
               <p className={`text-xs ${expiryStyle(t.expiresAt)}`}>{t.expiresAt ?? "—"}</p>
               <p className="text-xs text-[#999]">{t.usedAt ?? "—"}</p>
+              {t.lastEvent ? (
+                <div className="min-w-0">
+                  <p className="text-xs text-[#555] truncate">{t.lastEvent.event}</p>
+                  <p className="text-[10px] text-[#aaa] truncate">{t.lastEvent.by ?? "—"} · {fmtEventTime(t.lastEvent.at)}</p>
+                </div>
+              ) : (
+                <p className="text-xs text-[#ccc]">—</p>
+              )}
             </div>
           ))}
         </div>
@@ -297,7 +305,9 @@ export default function VouchersPage() {
                 {t.expiresAt && (
                   <p className={`text-[10px] ${expiryStyle(t.expiresAt)}`}>到期 {t.expiresAt}</p>
                 )}
-                <p className="text-xs text-[#aaa]">{t.usedAt ?? "—"}</p>
+                {t.lastEvent
+                  ? <p className="text-[10px] text-[#aaa]">{t.lastEvent.event} · {t.lastEvent.by ?? "—"}</p>
+                  : <p className="text-xs text-[#aaa]">{t.usedAt ?? "—"}</p>}
               </div>
             </div>
           </div>

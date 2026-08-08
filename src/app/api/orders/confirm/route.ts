@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { requireStaff } from "@/lib/admin-guard"
+import { requireStaffUser } from "@/lib/admin-guard"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { fireWorkflows, syncCourseEnrollment } from "@/lib/workflow-engine"
 import { withEvent } from "@/lib/ticket-history"
@@ -12,7 +12,9 @@ import { withEvent } from "@/lib/ticket-history"
 function pad(n: number) { return String(n).padStart(2, "0") }
 
 export async function POST(req: NextRequest) {
-  if (!(await requireStaff())) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+  const staff = await requireStaffUser()
+  if (!staff) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+  const actor = `${staff.name}（後台）`
   const { orderId, payMethod } = await req.json() as { orderId?: string; payMethod?: string }
   if (!orderId) return NextResponse.json({ error: "缺少 orderId" }, { status: 400 })
 
@@ -71,9 +73,9 @@ export async function POST(req: NextRequest) {
     const rows = Array.from({ length: order.qty }, (_, i) => {
       const bindDate = bookingDates[i] ?? null
       const bound = !!(order.course_id && bindDate)
-      let history = withEvent([], "發券", `訂單 ${order.order_no}`)
+      let history = withEvent([], "發券", `訂單 ${order.order_no}`, actor)
       if (bound) {
-        history = withEvent(history, "報名", `${(course as { title?: string } | null)?.title ?? ""} ${bindDate!.replace(/-/g, "/")}`.trim())
+        history = withEvent(history, "報名", `${(course as { title?: string } | null)?.title ?? ""} ${bindDate!.replace(/-/g, "/")}`.trim(), actor)
       }
       return {
         ticket_no: `TK-${num}-${pad(i + 1)}`,

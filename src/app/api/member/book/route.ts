@@ -24,6 +24,8 @@ export async function POST(req: NextRequest) {
   }
 
   const admin = createAdminClient()
+  const { data: actorProfile } = await admin.from("profiles").select("name").eq("id", user.id).maybeSingle()
+  const actor = `${actorProfile?.name || "會員"}（會員）`
   const { data: course } = await admin
     .from("courses")
     .select("id, title, types, status, schedule, capacity, ticket_types")
@@ -87,7 +89,7 @@ export async function POST(req: NextRequest) {
       status: "待使用",
       course_id: courseId,
       session_date: dates[i],
-      history: withEvent(t.history, "報名", `${course.title} ${dates[i].replace(/-/g, "/")}`),
+      history: withEvent(t.history, "報名", `${course.title} ${dates[i].replace(/-/g, "/")}`, actor),
     }).eq("id", ticketIds[i]).eq("status", "未使用")
     if (error) return NextResponse.json({ error: `綁定失敗：${error.message}` }, { status: 500 })
   }

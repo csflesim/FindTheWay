@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { requireStaff } from "@/lib/admin-guard"
+import { requireStaffUser } from "@/lib/admin-guard"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { withEvent } from "@/lib/ticket-history"
 import { syncCourseEnrollment } from "@/lib/workflow-engine"
@@ -8,7 +8,9 @@ import { syncCourseEnrollment } from "@/lib/workflow-engine"
 // - extend：人工延期（改效期）——過期棄權的券可救回
 // - restore：人工回復——已使用（含缺席核銷）退回未使用、已預約解除綁定退回未使用
 export async function POST(req: NextRequest) {
-  if (!(await requireStaff())) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+  const staff = await requireStaffUser()
+  if (!staff) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+  const actor = `${staff.name}（後台）`
 
   const { ticketId, action, expiresAt } = await req.json() as {
     ticketId?: string; action?: "extend" | "restore"; expiresAt?: string
@@ -29,7 +31,7 @@ export async function POST(req: NextRequest) {
     }
     const { error } = await admin.from("tickets").update({
       expires_at: expiresAt,
-      history: withEvent(t.history, "人工延期", `效期 ${t.expires_at ?? "—"} → ${expiresAt}`.replace(/-/g, "/")),
+      history: withEvent(t.history, "人工延期", `效期 ${t.expires_at ?? "—"} → ${expiresAt}`.replace(/-/g, "/"), actor),
     }).eq("id", ticketId)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ ok: true })
@@ -45,7 +47,7 @@ export async function POST(req: NextRequest) {
     used_at: null,
     course_id: null,
     session_date: null,
-    history: withEvent(t.history, "人工回復", "後台退回未使用"),
+    history: withEvent(t.history, "人工回復", "退回未使用", actor),
   }).eq("id", ticketId)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   await syncCourseEnrollment(courseId)
