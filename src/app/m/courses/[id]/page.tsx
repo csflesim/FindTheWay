@@ -41,6 +41,7 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
   const [attendees, setAttendees] = useState<Attendee[]>([{ id: null, name: "本人" }])
   const [attendeeId, setAttendeeId] = useState<string | null>(null)
   const [doneMode, setDoneMode] = useState<"ticket" | "direct">("direct")
+  const [myBooked, setMyBooked] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     (async () => {
@@ -73,14 +74,19 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
 
       const user = userRes.data.user
       if (user && c) {
-        const [{ data: profile }, { data: paidOrders }, { data: students }] = await Promise.all([
+        const [{ data: profile }, { data: paidOrders }, { data: students }, { data: mine }] = await Promise.all([
           supabase.from("profiles").select("id, name, role").eq("id", user.id).maybeSingle(),
           // 已售後訂單中未被收回的券仍可使用——可用性看券本身狀態
           supabase.from("orders")
             .select("id, product_id, item_name, status, student:students!student_id(name), tickets(id, ticket_no, status, expires_at, transferee:students!transferred_to(name))")
             .in("status", ["已付款", "已售後"]),
           supabase.from("students").select("id, name").eq("status", "已核准").order("created_at"),
+          // 自己在這門課已預約／已上過的日期（RLS 只回自己的券）
+          supabase.from("tickets").select("session_date")
+            .eq("course_id", id).in("status", ["待使用", "已使用"]),
         ])
+        setMyBooked(new Set(((mine ?? []) as { session_date: string | null }[])
+          .map(t => t.session_date).filter(Boolean) as string[]))
         if (profile?.role === "member") {
           setMe({ id: profile.id, name: profile.name || "會員" })
           setAttendees([{ id: null, name: "本人" }, ...((students ?? []) as { id: string; name: string }[])])
@@ -362,29 +368,36 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
                 <div className="flex flex-col gap-2">
                   {sessions.map(s => {
                     const sel = selectedDates.includes(s.date)
+                    const booked = myBooked.has(s.date)
                     const full = s.remaining <= 0
                     return (
                       <button
                         key={s.date}
-                        disabled={full && !sel}
+                        disabled={booked || (full && !sel)}
                         onClick={() => toggleDate(s.date)}
                         className={`flex items-center justify-between px-4 py-3 rounded-xl border text-left transition-colors ${
                           sel ? "border-black bg-black/5"
+                            : booked ? "border-[#f0f0f0] bg-[#fafaf9] opacity-60"
                             : full ? "border-[#f0f0f0] bg-[#fafaf9] opacity-50"
                             : "border-[#f0f0f0] bg-[#fafaf9] hover:border-[#ccc]"
                         }`}
                       >
                         <div className="flex items-center gap-3">
-                          <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${sel ? "bg-black border-black" : "border-[#ddd]"}`}>
+                          <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
+                            sel ? "bg-black border-black" : booked ? "bg-[#e8f5e9] border-[#c8e6c9]" : "border-[#ddd]"
+                          }`}>
                             {sel && <svg width="9" height="7" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3.5 6L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+                            {booked && <svg width="9" height="7" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3.5 6L8 1" stroke="#2e7d32" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
                           </span>
                           <div>
                             <p className="text-sm font-medium">{fmtDate(s.date)}</p>
                             <p className="text-[11px] text-[#aaa]">{s.time}</p>
                           </div>
                         </div>
-                        <span className={`text-[11px] shrink-0 ${full ? "text-red-400" : "text-[#999]"}`}>
-                          {full ? "已額滿" : `剩 ${s.remaining} 位`}
+                        <span className={`text-[11px] shrink-0 ${
+                          booked ? "text-[#2e7d32] font-medium" : full ? "text-red-400" : "text-[#999]"
+                        }`}>
+                          {booked ? "已預約" : full ? "已額滿" : `剩 ${s.remaining} 位`}
                         </span>
                       </button>
                     )
