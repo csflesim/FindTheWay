@@ -134,17 +134,25 @@ function crumbsFor(pathname: string): { group?: string; label: string; icon: Rea
   return null
 }
 
-/** 右上角使用者選單：點頭像展開「個人設定／登出」 */
-export function UserMenu({ me }: { me: Me | null }) {
+/** 右上角使用者選單：姓名＋頭像，點擊展開「個人設定／登出」 */
+export function UserMenu({ me, dark }: { me: Me | null; dark?: boolean }) {
   const [open, setOpen] = useState(false)
   return (
     <div className="relative">
       <button
         onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-2 rounded-full py-1 pl-1 pr-2 transition-colors hover:bg-[#f2f2f7]"
+        className={`flex items-center gap-2.5 rounded-full py-1 pl-3 pr-2 transition-colors ${
+          dark ? "hover:bg-white/10" : "hover:bg-[#f2f2f7]"
+        }`}
       >
+        <div className="text-right hidden sm:block">
+          <p className={`text-sm font-medium leading-tight ${dark ? "text-white" : ""}`}>{me?.name ?? "…"}</p>
+          <p className={`text-[10px] leading-tight ${dark ? "text-white/50" : "text-[#999]"}`}>
+            {me ? (ROLE_LABELS[me.role] ?? me.role) : ""}
+          </p>
+        </div>
         <Avatar me={me} size="w-8 h-8" />
-        <ChevronDown size={13} className="text-[#999]" />
+        <ChevronDown size={13} className={dark ? "text-white/50" : "text-[#999]"} />
       </button>
       {open && (
         <>
@@ -175,11 +183,13 @@ export function UserMenu({ me }: { me: Me | null }) {
 }
 
 /** 通知鈴鐺（通知中心與排程整併時接上實際內容） */
-function BellButton() {
+function BellButton({ dark }: { dark?: boolean }) {
   return (
     <button
       title="通知"
-      className="p-2 rounded-full transition-colors text-[#999] hover:text-black hover:bg-[#f2f2f7]"
+      className={`p-2 rounded-full transition-colors ${
+        dark ? "text-white/50 hover:text-white hover:bg-white/10" : "text-[#999] hover:text-black hover:bg-[#f2f2f7]"
+      }`}
     >
       <Bell size={17} strokeWidth={1.5} />
     </button>
@@ -226,12 +236,12 @@ function CollapsibleGroup({
       <button
         onClick={() => setOpen(v => !v)}
         className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm transition-colors w-full text-left ${
-          hasActive ? "text-black font-medium" : "text-[#666] hover:bg-[#f2f2f7]"
+          hasActive ? "text-white" : "text-white/60 hover:text-white hover:bg-white/10"
         }`}
       >
-        <GroupIcon size={16} strokeWidth={1.5} className={hasActive ? "" : "text-[#999]"} style={hasActive ? { color: ACCENT } : undefined} />
+        <GroupIcon size={16} strokeWidth={1.5} className={hasActive ? "text-white" : "text-white/40"} />
         <span className="flex-1">{group}</span>
-        <ChevronDown size={13} className={`text-[#bbb] transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
+        <ChevronDown size={13} className={`text-white/40 transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
       </button>
 
       {open && (
@@ -242,10 +252,9 @@ function CollapsibleGroup({
               <Link key={href} href={href} onClick={onClose}
                 className={`flex items-center gap-2.5 pl-[42px] pr-3 py-2 rounded-xl text-sm transition-colors ${
                   active
-                    ? "text-white font-medium"
-                    : "text-[#777] hover:bg-[#f2f2f7] hover:text-black"
-                }`}
-                style={active ? { backgroundColor: ACCENT } : undefined}>
+                    ? "bg-white text-black font-medium"
+                    : "text-white/50 hover:text-white hover:bg-white/10"
+                }`}>
                 {label}
               </Link>
             )
@@ -267,10 +276,9 @@ function NavLinks({ onClose }: { onClose?: () => void }) {
       {/* 總覽 */}
       <Link href={topItem.href} onClick={onClose}
         className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm transition-colors ${
-          topActive ? "text-white font-medium" : "text-[#666] hover:bg-[#f2f2f7]"
-        }`}
-        style={topActive ? { backgroundColor: ACCENT } : undefined}>
-        <topItem.icon size={16} strokeWidth={topActive ? 2 : 1.5} className={topActive ? "" : "text-[#999]"} />
+          topActive ? "bg-white text-black font-medium" : "text-white/60 hover:text-white hover:bg-white/10"
+        }`}>
+        <topItem.icon size={16} strokeWidth={topActive ? 2 : 1.5} className={topActive ? "" : "text-white/40"} />
         {topItem.label}
       </Link>
 
@@ -280,18 +288,18 @@ function NavLinks({ onClose }: { onClose?: () => void }) {
       ))}
 
       {/* Divider */}
-      <div className="my-2 border-t border-[#f0f0f4]" />
+      <div className="my-2 border-t border-white/10" />
 
       {/* 系統管理 */}
       <button
         onClick={() => setSysOpen(v => !v)}
         className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm transition-colors w-full text-left ${
-          sysActive ? "text-black font-medium" : "text-[#666] hover:bg-[#f2f2f7]"
+          sysActive ? "text-white" : "text-white/60 hover:text-white hover:bg-white/10"
         }`}
       >
-        <Settings2 size={16} strokeWidth={1.5} className={sysActive ? "" : "text-[#999]"} style={sysActive ? { color: ACCENT } : undefined} />
+        <Settings2 size={16} strokeWidth={1.5} className={sysActive ? "text-white" : "text-white/40"} />
         <span className="flex-1">系統管理</span>
-        <ChevronDown size={13} className={`text-[#bbb] transition-transform duration-200 ${sysOpen ? "rotate-180" : ""}`} />
+        <ChevronDown size={13} className={`text-white/40 transition-transform duration-200 ${sysOpen ? "rotate-180" : ""}`} />
       </button>
 
       {sysOpen && (
@@ -302,10 +310,9 @@ function NavLinks({ onClose }: { onClose?: () => void }) {
               <Link key={href} href={href} onClick={onClose}
                 className={`flex items-center gap-2.5 pl-[42px] pr-3 py-2 rounded-xl text-sm transition-colors ${
                   active
-                    ? "text-white font-medium"
-                    : "text-[#777] hover:bg-[#f2f2f7] hover:text-black"
-                }`}
-                style={active ? { backgroundColor: ACCENT } : undefined}>
+                    ? "bg-white text-black font-medium"
+                    : "text-white/50 hover:text-white hover:bg-white/10"
+                }`}>
                 {label}
               </Link>
             )
@@ -318,14 +325,14 @@ function NavLinks({ onClose }: { onClose?: () => void }) {
 
 function Brand() {
   return (
-    <div className="flex items-center gap-2.5 px-5 py-4">
+    <div className="flex items-center gap-2.5 px-5 py-4 border-b border-white/10">
       <div className="w-8 h-8 rounded-xl flex items-center justify-center text-white text-sm font-medium"
         style={{ backgroundColor: ACCENT }}>
         忙
       </div>
       <div>
-        <p className="text-sm font-semibold leading-tight">忙碌不迷路</p>
-        <p className="text-[10px] text-[#aaa] leading-tight">管理後台</p>
+        <p className="text-sm font-semibold leading-tight text-white">忙碌不迷路</p>
+        <p className="text-[10px] text-white/40 leading-tight">管理後台</p>
       </div>
     </div>
   )
@@ -338,29 +345,29 @@ export default function AdminNav() {
   return (
     <>
       {/* ── Desktop sidebar ─────────────────────── */}
-      <aside className="hidden lg:flex flex-col w-56 min-h-screen bg-white border-r border-[#ececf1] shrink-0">
+      <aside className="hidden lg:flex flex-col w-56 min-h-screen bg-black shrink-0">
         <Brand />
         <NavLinks />
       </aside>
 
       {/* ── Mobile top bar ──────────────────────── */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 h-12 bg-white border-b border-[#ececf1] flex items-center px-3 z-40">
-        <button onClick={() => setOpen(true)} className="p-1.5 mr-2 text-[#666]">
+      <header className="lg:hidden fixed top-0 left-0 right-0 h-12 bg-black text-white flex items-center px-3 z-40">
+        <button onClick={() => setOpen(true)} className="p-1.5 mr-2 text-white/70">
           <Menu size={20} />
         </button>
         <p className="text-sm font-semibold flex-1">管理後台</p>
-        <BellButton />
-        <UserMenu me={me} />
+        <BellButton dark />
+        <UserMenu me={me} dark />
       </header>
 
       {/* ── Mobile drawer overlay ───────────────── */}
       {open && (
         <div className="lg:hidden fixed inset-0 z-50 flex">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setOpen(false)} />
-          <aside className="relative w-64 bg-white flex flex-col h-full shadow-2xl">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setOpen(false)} />
+          <aside className="relative w-64 bg-black flex flex-col h-full shadow-2xl">
             <div className="flex items-center justify-between pr-4">
               <Brand />
-              <button onClick={() => setOpen(false)} className="text-[#bbb] hover:text-black">
+              <button onClick={() => setOpen(false)} className="text-white/40 hover:text-white">
                 <X size={18} />
               </button>
             </div>
