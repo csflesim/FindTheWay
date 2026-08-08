@@ -6,9 +6,11 @@ import { createAdminClient } from "@/lib/supabase/admin"
 // - 「出席」的學生：找一張其名下（或本人）未使用票券標記「已使用」，票券 id 記回 records
 // - 從出席改成缺席/延期：把先前核銷的那張票券退回「未使用」
 // - 課程若設定「可使用課堂券」（courses.ticket_types 存商品 id），只核銷對應券包的票券
+// - 以「課堂券扣抵」訂單報名的人：確認付款時已扣過一張，點名不再扣
+//   （每張扣抵訂單抵一堂——records 記 deductOrderId，佔用過的日期以外仍正常扣券）
 // 權限：後台人員或教師（教師需為該課程的授課老師）。
 
-type InRecord = { name: string; status: string; ticketId?: string | null }
+type InRecord = { name: string; status: string; ticketId?: string | null; deductOrderId?: string | null }
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient()
@@ -53,17 +55,61 @@ export async function POST(req: NextRequest) {
       .filter(r => r.ticketId)
       .map(r => [r.name, r.ticketId as string])
   )
+  const prevDeductByName = new Map(
+    ((existing?.records ?? []) as InRecord[])
+      .filter(r => r.deductOrderId)
+      .map(r => [r.name, r.deductOrderId as string])
+  )
 
-  // ── 找學生名下可核銷的票券 ──
-  async function findTicketFor(name: string): Promise<string | null> {
-    // 名字對到學員 → 該學員持有（含受讓）的未使用券
+  // ── 課堂券扣抵報名的抵扣額度：一張扣抵訂單抵一堂 ──
+  const { data: deductOrders } = await admin
+    .from("orders")
+    .select("id, student_id, member_id")
+    .eq("course_id", courseId)
+    .eq("status", "已付款")
+    .like("notes", "課堂券扣抵%")
+  // 其他日期已佔用的扣抵訂單
+  const usedDeducts = new Set<string>()
+  if ((deductOrders ?? []).length > 0) {
+    const { data: otherRows } = await admin
+      .from("course_attendance")
+      .select("date, records")
+      .eq("course_id", courseId)
+      .neq("date", date)
+    for (const row of otherRows ?? []) {
+      for (const r of (row.records ?? []) as InRecord[]) {
+        if (r.deductOrderId) usedDeducts.add(r.deductOrderId)
+      }
+    }
+  }
+
+  // 名字 → 學員 id / 會員 id（供票券查找與扣抵訂單比對共用）
+  async function resolvePerson(name: string): Promise<{ studentId: string | null; memberId: string | null }> {
     const { data: student } = await admin.from("students")
       .select("id").eq("name", name).eq("status", "已核准").limit(1).maybeSingle()
-    if (student) {
+    const { data: member } = await admin.from("profiles")
+      .select("id").eq("name", name).limit(1).maybeSingle()
+    return { studentId: student?.id ?? null, memberId: member?.id ?? null }
+  }
+
+  // 此人是否有尚未佔用的扣抵訂單（訂單指定學員→比對學員；未指定→比對會員本人）
+  function findFreeDeduct(p: { studentId: string | null; memberId: string | null }): string | null {
+    for (const o of deductOrders ?? []) {
+      if (usedDeducts.has(o.id)) continue
+      const match = o.student_id ? o.student_id === p.studentId : o.member_id === p.memberId
+      if (match) return o.id
+    }
+    return null
+  }
+
+  // ── 找學生名下可核銷的票券 ──
+  async function findTicketFor(p: { studentId: string | null; memberId: string | null }): Promise<string | null> {
+    // 學員 → 該學員持有（含受讓）的未使用券
+    if (p.studentId) {
       let q = admin.from("tickets")
         .select("id, expires_at, orders!inner(product_id)")
         .eq("status", "未使用")
-        .or(`transferred_to.eq.${student.id},and(transferred_to.is.null,student_id.eq.${student.id})`)
+        .or(`transferred_to.eq.${p.studentId},and(transferred_to.is.null,student_id.eq.${p.studentId})`)
       if (allowedProducts.length > 0) q = q.in("orders.product_id", allowedProducts)
       const { data: t } = await q
         .order("expires_at", { ascending: true, nullsFirst: false })
@@ -71,12 +117,10 @@ export async function POST(req: NextRequest) {
         .maybeSingle()
       if (t) return t.id
     }
-    // 名字對到會員本人 → 其訂單中未指定學員且未轉讓的未使用券
-    const { data: member } = await admin.from("profiles")
-      .select("id").eq("name", name).limit(1).maybeSingle()
-    if (member) {
+    // 會員本人 → 其訂單中未指定學員且未轉讓的未使用券
+    if (p.memberId) {
       let oq = admin.from("orders")
-        .select("id").eq("member_id", member.id).eq("status", "已付款")
+        .select("id").eq("member_id", p.memberId).eq("status", "已付款")
       if (allowedProducts.length > 0) oq = oq.in("product_id", allowedProducts)
       const { data: orders } = await oq
       const orderIds = (orders ?? []).map(o => o.id)
@@ -100,18 +144,31 @@ export async function POST(req: NextRequest) {
   const outRecords: InRecord[] = []
   for (const r of records) {
     const prevTicket = prevTicketByName.get(r.name) ?? r.ticketId ?? null
+    const prevDeduct = prevDeductByName.get(r.name) ?? null
     if (r.status === "出席") {
       if (prevTicket) {
         outRecords.push({ name: r.name, status: r.status, ticketId: prevTicket })
+      } else if (prevDeduct) {
+        // 本日已用扣抵額度抵過 → 維持
+        usedDeducts.add(prevDeduct)
+        outRecords.push({ name: r.name, status: r.status, deductOrderId: prevDeduct })
       } else {
-        const ticketId = await findTicketFor(r.name)
-        if (ticketId) {
-          await admin.from("tickets")
-            .update({ status: "已使用", used_at: new Date().toISOString() })
-            .eq("id", ticketId)
-          outRecords.push({ name: r.name, status: r.status, ticketId })
+        const person = await resolvePerson(r.name)
+        // 以「課堂券扣抵」報名者：確認付款時已扣過，這裡佔用額度、不再扣券
+        const deductId = findFreeDeduct(person)
+        if (deductId) {
+          usedDeducts.add(deductId)
+          outRecords.push({ name: r.name, status: r.status, deductOrderId: deductId })
         } else {
-          outRecords.push({ name: r.name, status: r.status })   // 無券可扣，僅記出席
+          const ticketId = await findTicketFor(person)
+          if (ticketId) {
+            await admin.from("tickets")
+              .update({ status: "已使用", used_at: new Date().toISOString() })
+              .eq("id", ticketId)
+            outRecords.push({ name: r.name, status: r.status, ticketId })
+          } else {
+            outRecords.push({ name: r.name, status: r.status })   // 無券可扣，僅記出席
+          }
         }
       }
     } else {
@@ -122,6 +179,7 @@ export async function POST(req: NextRequest) {
           .eq("id", prevTicket)
           .eq("status", "已使用")
       }
+      // 扣抵額度不用退——紀錄不再帶 deductOrderId 即釋出，可供其他日期使用
       outRecords.push({ name: r.name, status: r.status })
     }
     prevTicketByName.delete(r.name)

@@ -35,6 +35,7 @@ export type MemberOrderLite = {
   course_id: string | null
   student_id: string | null
   created_at: string
+  product: { transferable: boolean } | null
   tickets: TicketLite[]
 }
 
@@ -55,7 +56,7 @@ export async function fetchMemberData(supabase: SupabaseClient, profileName: str
   const [sRes, oRes] = await Promise.all([
     supabase.from("students").select("id, name, age, relation, status").order("created_at"),
     supabase.from("orders")
-      .select("id, order_no, item_name, status, course_id, student_id, created_at, tickets(id, status, student_id, transferred_to)")
+      .select("id, order_no, item_name, status, course_id, student_id, created_at, product:products!product_id(transferable), tickets(id, status, student_id, transferred_to)")
       .order("created_at", { ascending: false }),
   ])
   const rows = (sRes.data ?? []) as StudentRow[]

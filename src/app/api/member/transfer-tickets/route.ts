@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
   // 訂單必須是自己的且已付款
   const { data: order } = await admin
     .from("orders")
-    .select("id, member_id, status, tickets(id, status, transferred_to, student_id)")
+    .select("id, member_id, status, product:products!product_id(transferable), tickets(id, status, transferred_to, student_id)")
     .eq("id", orderId)
     .maybeSingle()
   if (!order || order.member_id !== user.id) {
@@ -32,6 +32,11 @@ export async function POST(req: NextRequest) {
   }
   if (order.status !== "已付款") {
     return NextResponse.json({ error: "此訂單無可轉讓票券" }, { status: 400 })
+  }
+  // 券包商品必須開啟可轉讓
+  const product = order.product as unknown as { transferable: boolean } | null
+  if (!product?.transferable) {
+    return NextResponse.json({ error: "此券包不可轉讓" }, { status: 400 })
   }
 
   // 轉讓對象必須是自己名下已核准的學員

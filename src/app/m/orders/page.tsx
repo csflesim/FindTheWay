@@ -34,7 +34,7 @@ export default function OrdersPage() {
       remaining: o.tickets.filter(t => t.status === "未使用").length,
       total: o.qty,
       expiry: o.tickets[0]?.expiresAt ?? "—",
-      transferable: o.qty >= 10,
+      transferable: o.transferable,
     }))
     .filter(t => t.remaining > 0)
 

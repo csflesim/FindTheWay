@@ -35,10 +35,10 @@ export default function BuyTicketsPage() {
 
   useEffect(() => {
     Promise.all([
-      supabase.from("products").select("id, name, sessions, price, validity_months").eq("active", true).order("sort_order"),
+      supabase.from("products").select("id, name, sessions, price, validity_months, transferable").eq("active", true).order("sort_order"),
       supabase.auth.getUser(),
     ]).then(([pRes, uRes]) => {
-      setPackages(((pRes.data ?? []) as { id: string; name: string; sessions: number; price: number; validity_months: number }[])
+      setPackages(((pRes.data ?? []) as { id: string; name: string; sessions: number; price: number; validity_months: number; transferable: boolean }[])
         .map(p => ({
           id: p.id,
           name: p.name,
@@ -48,7 +48,7 @@ export default function BuyTicketsPage() {
           highlights: [
             "任選課程",
             `有效期 ${p.validity_months} 個月`,
-            ...(p.sessions >= 10 ? ["可轉讓"] : []),
+            ...(p.transferable ? ["可轉讓"] : []),
           ],
           popular: p.sessions === 10,
         })))

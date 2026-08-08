@@ -40,6 +40,7 @@ export type Order = {
   payStatus: PayStatus
   payMethod?: string
   notes?: string
+  transferable: boolean   // 券包商品是否開放轉讓
   tickets: Ticket[]
   afterSales?: AfterSalesRecord
 }
@@ -54,9 +55,9 @@ export type Product = {
 
 export const PAY_METHODS = ["銀行轉帳", "現金", "Line Pay", "信用卡"]
 
-// 訂單完整查詢：會員、學員、票券（含受讓人）一次 JOIN 帶齊
+// 訂單完整查詢：會員、學員、商品、票券（含受讓人）一次 JOIN 帶齊
 export const ORDER_SELECT =
-  "*, member:profiles!member_id(name), student:students!student_id(name), tickets(*, transferee:students!transferred_to(name))"
+  "*, member:profiles!member_id(name), student:students!student_id(name), product:products!product_id(transferable), tickets(*, transferee:students!transferred_to(name))"
 
 type TicketRow = {
   id: string
@@ -84,6 +85,7 @@ export type OrderRow = {
   created_at: string
   member: { name: string } | null
   student: { name: string } | null
+  product: { transferable: boolean } | null
   tickets: TicketRow[]
 }
 
@@ -117,6 +119,7 @@ export function orderFromRow(r: OrderRow): Order {
     payStatus: r.status,
     payMethod: r.pay_method ?? undefined,
     notes: r.notes ?? undefined,
+    transferable: r.product?.transferable ?? false,
     afterSales: r.after_sales ?? undefined,
     tickets: (r.tickets ?? [])
       .slice()
