@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server"
 import crypto from "crypto"
 import { getLineLoginConfig } from "@/lib/line-config"
-import { buildLineAuthUrl } from "@/lib/line"
-
-const BASE = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000"
+import { buildLineAuthUrl, requestBaseUrl } from "@/lib/line"
 
 export async function GET(req: Request) {
+  const BASE = requestBaseUrl(req.headers)   // 以當前網域組回呼網址
   const config = await getLineLoginConfig()
   if (!config.channelId) {
     return NextResponse.json(

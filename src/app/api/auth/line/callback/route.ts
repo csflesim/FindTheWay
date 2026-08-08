@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createServerClient } from "@supabase/ssr"
 import { getLineLoginConfig } from "@/lib/line-config"
-import { exchangeLineToken, getLineProfile } from "@/lib/line"
+import { exchangeLineToken, getLineProfile, requestBaseUrl } from "@/lib/line"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { PENDING_COOKIE, signToken } from "@/lib/line-pending"
 
-const BASE = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000"
-
 export async function GET(req: NextRequest) {
+  const BASE = requestBaseUrl(req.headers)   // 與入口一致：以當前網域組回呼網址
+
   const { searchParams } = req.nextUrl
   const code = searchParams.get("code")
   const state = searchParams.get("state")

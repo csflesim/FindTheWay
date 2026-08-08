@@ -3,6 +3,16 @@ import { getLineMsgConfig } from "./line-config"
 
 // ── LINE Login OAuth helpers ──────────────────────────────────
 
+/** 由請求標頭推導站台網址（Vercel 走 x-forwarded-*），不依賴環境變數 */
+export function requestBaseUrl(headers: Headers): string {
+  const host = headers.get("x-forwarded-host") ?? headers.get("host")
+  if (host) {
+    const proto = headers.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https")
+    return `${proto}://${host}`
+  }
+  return process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000"
+}
+
 export function buildLineAuthUrl(channelId: string, redirectUri: string, state: string): string {
   const p = new URLSearchParams({
     response_type: "code",
