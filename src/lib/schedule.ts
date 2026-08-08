@@ -1,5 +1,5 @@
-// 課程班表為文字格式："每週六 10:00–12:00"（固定週期）或 "2026/06/10 14:00–15:30"（單堂課）
-// 這裡負責把班表展開成月曆事件，供教師課表 / 教室課表使用。
+// 課程班表為文字格式："每週六 10:00–12:00"、"每週二、四 19:00–20:30"（固定週期，星期可複選）
+// 或 "2026/06/10 14:00–15:30"（單堂課）。這裡負責把班表展開成月曆事件，供教師課表 / 教室課表使用。
 
 const WEEKDAY_INDEX: Record<string, number> = {
   "日": 0, "一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6,
@@ -19,13 +19,15 @@ export function expandScheduleToMonth(
 ): Record<string, ScheduleEvent[]> {
   const out: Record<string, ScheduleEvent[]> = {}
 
-  const weekly = schedule.match(/每週([日一二三四五六]) (\d{2}:\d{2})–(\d{2}:\d{2})/)
+  const weekly = schedule.match(/每週([日一二三四五六、]+) (\d{2}:\d{2})–(\d{2}:\d{2})/)
   if (weekly) {
-    const wd = WEEKDAY_INDEX[weekly[1]]
+    const wds = new Set(
+      weekly[1].split("、").map(c => WEEKDAY_INDEX[c]).filter(n => n !== undefined),
+    )
     const time = `${weekly[2]}–${weekly[3]}`
     const daysInMonth = new Date(year, month0 + 1, 0).getDate()
     for (let d = 1; d <= daysInMonth; d++) {
-      if (new Date(year, month0, d).getDay() === wd) {
+      if (wds.has(new Date(year, month0, d).getDay())) {
         const key = `${year}-${pad(month0 + 1)}-${pad(d)}`
         ;(out[key] ??= []).push({ title, time, extra })
       }

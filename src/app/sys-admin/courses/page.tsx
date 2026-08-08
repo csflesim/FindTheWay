@@ -83,7 +83,7 @@ const TIMES: string[] = (() => {
 })()
 
 function parseSchedule(s: string) {
-  const weekly = s.match(/每週([日一二三四五六]) (\d{2}:\d{2})–(\d{2}:\d{2})/)
+  const weekly = s.match(/每週([日一二三四五六、]+) (\d{2}:\d{2})–(\d{2}:\d{2})/)
   if (weekly) return { scheduleType: "固定週期" as const, scheduleDay: weekly[1], scheduleDate: "", scheduleStart: weekly[2], scheduleEnd: weekly[3] }
   const single = s.match(/(\d{4}\/\d{2}\/\d{2}) (\d{2}:\d{2})–(\d{2}:\d{2})/)
   if (single) return { scheduleType: "單堂課" as const, scheduleDay: "", scheduleDate: single[1].replace(/\//g, "-"), scheduleStart: single[2], scheduleEnd: single[3] }
@@ -838,8 +838,14 @@ export default function CoursesPage() {
                         <div className="flex gap-1">
                           {["日", "一", "二", "三", "四", "五", "六"].map(d => (
                             <button key={d} type="button"
-                              onClick={() => setForm(f => ({ ...f, scheduleDay: d }))}
-                              className={`flex-1 py-2 text-xs rounded-lg border transition-colors ${form.scheduleDay === d ? "bg-black text-white border-black" : "bg-white text-[#555] border-[#f0f0f0] hover:border-black"
+                              onClick={() => setForm(f => {
+                                const days = f.scheduleDay ? f.scheduleDay.split("、") : []
+                                const next = days.includes(d) ? days.filter(x => x !== d) : [...days, d]
+                                const order = ["日", "一", "二", "三", "四", "五", "六"]
+                                next.sort((a, b) => order.indexOf(a) - order.indexOf(b))
+                                return { ...f, scheduleDay: next.join("、") }
+                              })}
+                              className={`flex-1 py-2 text-xs rounded-lg border transition-colors ${form.scheduleDay.split("、").includes(d) ? "bg-black text-white border-black" : "bg-white text-[#555] border-[#f0f0f0] hover:border-black"
                                 }`}>
                               {d}
                             </button>
