@@ -395,7 +395,8 @@ create policy "students_staff_all"    on public.students for all    using (publi
 -- 公開目錄：任何人（含未登入）可讀，後台全權
 create policy "teachers_public_read"  on public.teachers        for select using (status = '在職' or public.is_staff());
 create policy "teachers_staff_all"    on public.teachers        for all    using (public.is_staff());
-create policy "courses_public_read"   on public.courses         for select using (visible = true or public.is_staff());
+-- 隱藏課程＝不上列表但連結可達（列表查詢自帶 visible 過濾）
+create policy "courses_public_read"   on public.courses         for select using (true);
 create policy "courses_staff_all"     on public.courses         for all    using (public.is_staff());
 create policy "ct_public_read"        on public.course_teachers for select using (true);
 create policy "ct_staff_all"          on public.course_teachers for all    using (public.is_staff());

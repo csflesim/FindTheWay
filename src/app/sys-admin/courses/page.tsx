@@ -397,6 +397,7 @@ export default function CoursesPage() {
   const [editing, setEditing] = useState<Course | null>(null)
   const [form, setForm] = useState(EMPTY_FORM)
   const [attendCourse, setAttendCourse] = useState<Course | null>(null)
+  const [linkCopied, setLinkCopied] = useState(false)
   const [sessions, setSessions] = useState<Session[]>([])
   const [sessionIdx, setSessionIdx] = useState(0)
   const [newName, setNewName] = useState("")
@@ -964,7 +965,30 @@ export default function CoursesPage() {
                     </button>
                   ))}
                 </div>
+                <p className="text-[10px] text-[#bbb] mt-1.5">隱藏後不會出現在前台課程列表，但持有課程連結者仍可進入報名</p>
               </Field>
+
+              {editing && (
+                <Field label="課程連結">
+                  <div className="flex gap-2">
+                    <input readOnly value={`${typeof window !== "undefined" ? window.location.origin : ""}/m/courses/${editing.id}`}
+                      onFocus={e => e.currentTarget.select()}
+                      className="flex-1 px-3 py-2.5 text-xs font-mono bg-[#fafaf9] border border-[#f0f0f0] rounded-xl outline-none text-[#666]" />
+                    <button type="button"
+                      onClick={() => {
+                        const url = `${window.location.origin}/m/courses/${editing.id}`
+                        navigator.clipboard.writeText(url).then(
+                          () => setLinkCopied(true),
+                          () => alert(url),
+                        )
+                        setTimeout(() => setLinkCopied(false), 1500)
+                      }}
+                      className="shrink-0 px-4 py-2.5 text-sm border border-[#e8e8e8] rounded-xl text-[#333] hover:border-black transition-colors whitespace-nowrap">
+                      {linkCopied ? "已複製" : "複製連結"}
+                    </button>
+                  </div>
+                </Field>
+              )}
 
               <Field label="課程圖片">
                 <div className="flex flex-col gap-3">
