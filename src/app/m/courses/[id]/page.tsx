@@ -42,6 +42,7 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
   const [attendeeId, setAttendeeId] = useState<string | null>(null)
   const [doneMode, setDoneMode] = useState<"ticket" | "direct">("direct")
   const [myBooked, setMyBooked] = useState<Set<string>>(new Set())
+  const [showAllSessions, setShowAllSessions] = useState(false)
 
   useEffect(() => {
     (async () => {
@@ -362,11 +363,11 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
 
             <div className="px-6 pb-6 flex flex-col gap-4 overflow-y-auto max-h-[75vh]">
 
-              {/* 場次複選 */}
+              {/* 場次複選（預設 4 堂，可展開到 8 堂） */}
               <div>
                 <p className="text-xs text-[#999] mb-2">選擇上課日期（可複選）</p>
                 <div className="flex flex-col gap-2">
-                  {sessions.map(s => {
+                  {(showAllSessions ? sessions : sessions.slice(0, 4)).map(s => {
                     const sel = selectedDates.includes(s.date)
                     const booked = myBooked.has(s.date)
                     const full = s.remaining <= 0
@@ -402,6 +403,14 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
                       </button>
                     )
                   })}
+                  {!showAllSessions && sessions.length > 4 && (
+                    <button
+                      onClick={() => setShowAllSessions(true)}
+                      className="py-2.5 text-xs text-[#999] hover:text-black border border-dashed border-[#e0e0e0] hover:border-[#bbb] rounded-xl transition-colors"
+                    >
+                      查看更多場次（近 {sessions.length} 堂）
+                    </button>
+                  )}
                 </div>
               </div>
 
