@@ -1,19 +1,21 @@
 'use client'
 
-import { useMemo, useState } from "react"
+import { Suspense, useState } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Eye, EyeOff, ArrowLeft } from "lucide-react"
-import { createClient } from "@/lib/supabase/client"
 
-export default function TeacherLoginPage() {
-  const supabase = useMemo(() => createClient(), [])
+function TeacherLoginContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const lineError = searchParams.get("error")
   const [showPw, setShowPw] = useState(false)
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState("")
+  const [error, setError] = useState(
+    lineError === "line_unbound" ? "此 LINE 尚未綁定任何教師，請先以帳密登入後在個人資料綁定" : "",
+  )
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -23,22 +25,20 @@ export default function TeacherLoginPage() {
       return
     }
     setLoading(true)
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
-    if (signInError) {
-      setLoading(false)
-      setError("帳號或密碼錯誤，請再試一次")
-      return
-    }
-    // 確認此帳號對應到教師檔（以 email / LINE 比對並自動綁定）
-    const res = await fetch("/api/teacher/me")
+    // 教師端只查教師表：輸入 Email／電話 → 對應獨立教師帳號驗證
+    const res = await fetch("/api/auth/portal-login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ portal: "teacher", identifier: email.trim(), password }),
+    })
     const d = await res.json()
     setLoading(false)
-    if (!d.teacher) {
-      await supabase.auth.signOut()
-      setError("此帳號不是教師，請確認後台教師管理的 Email 設定")
+    if (!res.ok || !d.ok) {
+      setError(d.error ?? "登入失敗")
       return
     }
     router.replace("/m/teacher")
+    router.refresh()
   }
 
   return (
@@ -60,10 +60,9 @@ export default function TeacherLoginPage() {
       {/* Form */}
       <form onSubmit={handleSubmit} className="mx-6 flex flex-col gap-3">
         <div>
-          <label className="text-xs text-[#999] mb-1.5 block">Email</label>
+          <label className="text-xs text-[#999] mb-1.5 block">Email 或手機號碼</label>
           <input
-            type="email"
-            placeholder="your@email.com"
+            placeholder="your@email.com 或 0912345678"
             value={email}
             onChange={e => { setEmail(e.target.value); setError("") }}
             className="w-full px-4 py-3 text-sm bg-white border border-[#f0f0f0] rounded-xl outline-none focus:border-black transition-colors"
@@ -117,7 +116,7 @@ export default function TeacherLoginPage() {
 
       {/* LINE login */}
       <a
-        href="/api/auth/line?next=/m/teacher"
+        href="/api/auth/line?portal=teacher&next=/m/teacher"
         className="mx-6 flex items-center justify-center gap-2.5 py-3 rounded-xl text-sm font-medium text-white transition-opacity hover:opacity-90 active:opacity-80"
         style={{ backgroundColor: "#06C755" }}
       >
@@ -132,5 +131,13 @@ export default function TeacherLoginPage() {
         © 忙碌不迷路藝術工作坊
       </p>
     </div>
+  )
+}
+
+export default function TeacherLoginPage() {
+  return (
+    <Suspense>
+      <TeacherLoginContent />
+    </Suspense>
   )
 }

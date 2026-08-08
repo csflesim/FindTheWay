@@ -105,6 +105,7 @@ const sysItems: NavItem[] = [
   { href: "/sys-admin/system/members", label: "人員管理", icon: UserCog },
   { href: "/sys-admin/system/roles",   label: "角色管理", icon: Shield },
   { href: "/sys-admin/system/params",  label: "參數管理", icon: SlidersHorizontal },
+  { href: "/sys-admin/system/account", label: "個人設定", icon: UserCog },
 ]
 
 function UserCard({ me }: { me: Me | null }) {

@@ -51,23 +51,86 @@ export async function GET(req: NextRequest) {
 
     const admin = createAdminClient()
 
-    // 既有帳號：用 profiles.line_user_id 直查（unique）
+    // 端口分流：每個端只查自己的表（member 預設 / teacher / staff）
+    const portal = req.cookies.get("line_portal")?.value ?? "member"
+    const loginPage = portal === "teacher" ? "/m/teacher/login"
+      : portal === "staff" ? "/sys-admin/login" : "/m/login"
+    const defaultNext = portal === "teacher" ? "/m/teacher"
+      : portal === "staff" ? "/sys-admin" : "/m"
+    const rawNext = req.cookies.get("line_next")?.value
+    const next = rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : defaultNext
+
+    // 以 magiclink token 換 session，cookie 寫在導向回應上
+    async function signInAs(uid: string): Promise<NextResponse> {
+      const { data: authUser } = await admin.auth.admin.getUserById(uid)
+      const accountEmail = authUser?.user?.email
+      if (!accountEmail) throw new Error("account email missing")
+      const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
+        type: "magiclink", email: accountEmail,
+      })
+      if (linkErr || !linkData?.properties?.hashed_token) throw new Error(linkErr?.message ?? "generateLink failed")
+      const res = NextResponse.redirect(new URL(next, BASE))
+      res.cookies.delete("line_state")
+      res.cookies.delete("line_next")
+      res.cookies.delete("line_portal")
+      const ssrClient = createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+          cookies: {
+            getAll() { return req.cookies.getAll() },
+            setAll(list) {
+              list.forEach(({ name, value, options }) => res.cookies.set(name, value, options))
+            },
+          },
+        },
+      )
+      const { error: verifyErr } = await ssrClient.auth.verifyOtp({
+        token_hash: linkData.properties.hashed_token,
+        type: "magiclink",
+      })
+      if (verifyErr) throw new Error(verifyErr.message)
+      return res
+    }
+
+    // ── 教師端：只對照教師表的 LINE 綁定 ──
+    if (portal === "teacher") {
+      const { data: t } = await admin.from("teachers")
+        .select("id, profile_id").eq("line_user_id", profile.userId).maybeSingle()
+      if (!t?.profile_id) {
+        return NextResponse.redirect(new URL(`${loginPage}?error=line_unbound`, BASE))
+      }
+      return await signInAs(t.profile_id as string)
+    }
+
+    // ── 後台：只對照人員表（staff/admin）的 LINE 綁定 ──
+    if (portal === "staff") {
+      const { data: p } = await admin.from("profiles")
+        .select("id").in("role", ["staff", "admin"])
+        .eq("line_user_id", profile.userId).maybeSingle()
+      if (!p?.id) {
+        return NextResponse.redirect(new URL(`${loginPage}?error=line_unbound`, BASE))
+      }
+      return await signInAs(p.id as string)
+    }
+
+    // ── 會員端：只對照會員表 ──
     const { data: existingProfile } = await admin
       .from("profiles")
       .select("id")
       .eq("line_user_id", profile.userId)
+      .eq("role", "member")
       .maybeSingle()
 
     // 首次 LINE 登入：不建帳號——LINE 只做身份驗證，身分暫存簽章 cookie（30 分鐘），
     // 到綁定頁完成 Email 驗證碼後才正式建立帳號（見 /api/member/verify-email）
     if (!existingProfile?.id) {
-      const rawNext = req.cookies.get("line_next")?.value
-      const next = rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/m"
       const res = NextResponse.redirect(
         new URL(`/m/bind-email?next=${encodeURIComponent(next)}`, BASE),
       )
       res.cookies.delete("line_state")
       res.cookies.delete("line_next")
+      res.cookies.delete("line_portal")
       res.cookies.set(
         PENDING_COOKIE,
         signToken({
@@ -89,56 +152,7 @@ export async function GET(req: NextRequest) {
         picture_url: profile.pictureUrl ?? "",
       },
     })
-
-    // --- Generate a magic link token and exchange it for a real session ---
-    const { data: authUser } = await admin.auth.admin.getUserById(supabaseUid)
-    const accountEmail = authUser?.user?.email
-    if (!accountEmail) {
-      console.error("LINE user has no account email:", profile.userId)
-      return NextResponse.redirect(new URL("/m/login?error=line_failed", BASE))
-    }
-
-    const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
-      type: "magiclink",
-      email: accountEmail,
-    })
-
-    if (linkErr || !linkData?.properties?.hashed_token) {
-      console.error("generateLink error:", linkErr)
-      return NextResponse.redirect(new URL("/m/login?error=line_failed", BASE))
-    }
-
-    // Build response redirect first, then let the SSR client write session cookies onto it
-    const rawNext = req.cookies.get("line_next")?.value
-    const next = rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/m"
-    const res = NextResponse.redirect(new URL(next, BASE))
-    res.cookies.delete("line_state")
-    res.cookies.delete("line_next")
-
-    const ssrClient = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() { return req.cookies.getAll() },
-          setAll(list) {
-            list.forEach(({ name, value, options }) => res.cookies.set(name, value, options))
-          },
-        },
-      },
-    )
-
-    const { error: verifyErr } = await ssrClient.auth.verifyOtp({
-      token_hash: linkData.properties.hashed_token,
-      type: "magiclink",
-    })
-
-    if (verifyErr) {
-      console.error("verifyOtp error:", verifyErr)
-      return NextResponse.redirect(new URL("/m/login?error=line_failed", BASE))
-    }
-
-    return res
+    return await signInAs(supabaseUid)
   } catch (err) {
     console.error("LINE callback error:", err)
     return NextResponse.redirect(new URL("/m/login?error=line_failed", BASE))

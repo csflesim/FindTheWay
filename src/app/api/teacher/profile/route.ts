@@ -52,3 +52,43 @@ export async function PATCH(req: NextRequest) {
 
   return NextResponse.json({ ok: true, photoUrl })
 }
+
+// LINE 綁定（寫入教師表；與會員／後台的綁定互相獨立）
+export async function PUT(req: NextRequest) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+
+  const admin = createAdminClient()
+  const { data: teacher } = await admin.from("teachers")
+    .select("id").eq("profile_id", user.id).maybeSingle()
+  if (!teacher) return NextResponse.json({ error: "非教師帳號" }, { status: 403 })
+
+  const { lineUserId } = await req.json() as { lineUserId?: string }
+  if (!lineUserId || !/^U[0-9a-f]{32}$/i.test(lineUserId)) {
+    return NextResponse.json({ error: "LINE ID 格式不正確" }, { status: 400 })
+  }
+  const { data: taken } = await admin.from("teachers")
+    .select("id").eq("line_user_id", lineUserId).neq("id", teacher.id).maybeSingle()
+  if (taken) return NextResponse.json({ error: "此 LINE 已綁定其他教師" }, { status: 400 })
+
+  const { error } = await admin.from("teachers").update({ line_user_id: lineUserId }).eq("id", teacher.id)
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ ok: true })
+}
+
+// 解除 LINE 綁定
+export async function DELETE() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+
+  const admin = createAdminClient()
+  const { data: teacher } = await admin.from("teachers")
+    .select("id").eq("profile_id", user.id).maybeSingle()
+  if (!teacher) return NextResponse.json({ error: "非教師帳號" }, { status: 403 })
+
+  const { error } = await admin.from("teachers").update({ line_user_id: null }).eq("id", teacher.id)
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ ok: true })
+}

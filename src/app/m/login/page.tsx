@@ -1,7 +1,7 @@
 'use client'
 
-import { Suspense } from "react"
-import { useSearchParams } from "next/navigation"
+import { Suspense, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
 
@@ -18,8 +18,31 @@ const LINE_ICON = (
 )
 
 function LoginContent() {
+  const router = useRouter()
   const searchParams = useSearchParams()
   const lineError = searchParams.get("error")
+  const rawNext = searchParams.get("next") ?? "/m"
+  const next = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/m"
+
+  const [identifier, setIdentifier] = useState("")
+  const [password, setPassword] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState("")
+
+  async function handleLogin() {
+    if (busy || !identifier.trim() || !password) return
+    setBusy(true); setError("")
+    const res = await fetch("/api/auth/portal-login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ portal: "member", identifier: identifier.trim(), password }),
+    })
+    const d = await res.json()
+    setBusy(false)
+    if (!res.ok || !d.ok) { setError(d.error ?? "登入失敗"); return }
+    router.replace(next)
+    router.refresh()
+  }
 
   return (
     <div className="min-h-screen bg-[#fafaf9] flex flex-col">
@@ -46,16 +69,47 @@ function LoginContent() {
       {/* LINE login */}
       <div className="mx-6 flex flex-col gap-4">
         <a
-          href="/api/auth/line"
+          href={`/api/auth/line?portal=member&next=${encodeURIComponent(next)}`}
           className="w-full bg-[#06C755] text-white py-4 rounded-2xl font-medium flex items-center justify-center gap-3 hover:bg-[#05b34d] active:scale-[0.98] transition-all text-base shadow-sm"
         >
           {LINE_ICON}
           使用 LINE 登入／註冊
         </a>
-
         <p className="text-center text-[11px] text-[#bbb] leading-relaxed px-4">
-          點擊後將跳轉至 LINE 進行身份驗證<br />
-          首次登入將自動建立會員帳號
+          首次使用請以 LINE 註冊，將自動建立會員帳號
+        </p>
+
+        {/* 帳密登入 */}
+        <div className="flex items-center gap-3 my-1">
+          <div className="flex-1 h-px bg-[#eee]" />
+          <span className="text-[11px] text-[#ccc]">或以帳號密碼登入</span>
+          <div className="flex-1 h-px bg-[#eee]" />
+        </div>
+
+        <input
+          value={identifier}
+          onChange={e => { setIdentifier(e.target.value); setError("") }}
+          placeholder="Email 或手機號碼"
+          className="w-full px-4 py-3 text-sm bg-white border border-[#f0f0f0] rounded-xl outline-none focus:border-black transition-colors"
+        />
+        <input
+          type="password"
+          value={password}
+          onChange={e => { setPassword(e.target.value); setError("") }}
+          onKeyDown={e => e.key === "Enter" && handleLogin()}
+          placeholder="密碼"
+          className="w-full px-4 py-3 text-sm bg-white border border-[#f0f0f0] rounded-xl outline-none focus:border-black transition-colors"
+        />
+        {error && <p className="text-xs text-red-500">{error}</p>}
+        <button
+          onClick={handleLogin}
+          disabled={busy || !identifier.trim() || !password}
+          className="w-full py-3.5 text-sm font-medium bg-black text-white rounded-2xl disabled:opacity-40 transition-opacity"
+        >
+          {busy ? "登入中…" : "登入"}
+        </button>
+        <p className="text-center text-[11px] text-[#bbb]">
+          密碼可在 LINE 註冊後至「設定」建立
         </p>
       </div>
 

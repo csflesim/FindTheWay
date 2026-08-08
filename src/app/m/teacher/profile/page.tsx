@@ -116,6 +116,7 @@ export default function TeacherProfilePage() {
   const [notifyCourse, setNotifyCourse] = useState(true)
   const [notifySystem, setNotifySystem] = useState(true)
   const [logoutConfirm, setLogoutConfirm] = useState(false)
+  const [lineBound, setLineBound] = useState(false)
 
   useEffect(() => {
     try {
@@ -126,6 +127,20 @@ export default function TeacherProfilePage() {
         if (typeof p.system === "boolean") setNotifySystem(p.system)
       }
     } catch {}
+    // LINE 綁定回跳（whoami 模式帶回 lineUserId）→ 寫入教師表
+    const params = new URLSearchParams(window.location.search)
+    const lineUserId = params.get("lineUserId")
+    if (lineUserId) {
+      window.history.replaceState({}, "", "/m/teacher/profile")
+      fetch("/api/teacher/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lineUserId }),
+      }).then(r => r.json()).then(d => {
+        if (d.ok) setLineBound(true)
+        else alert(d.error ?? "綁定失敗")
+      })
+    }
   }, [])
 
   function saveNotify(course: boolean, system: boolean) {
@@ -135,6 +150,7 @@ export default function TeacherProfilePage() {
   useEffect(() => {
     if (!teacher) return
     setInfo({ name: teacher.name, specialty: teacher.specialty, phone: teacher.phone, bio: teacher.bio, photoUrl: teacher.photoUrl })
+    setLineBound(teacher.lineBound)
     ;(async () => {
       const courses = await fetchTeacherCourses(supabase, teacher.id)
       const now = new Date()
@@ -329,12 +345,27 @@ export default function TeacherProfilePage() {
           <div className="flex items-center justify-between px-4 py-3.5">
             <div>
               <p className="text-sm">LINE 帳號綁定</p>
-              <p className="text-xs text-[#aaa] mt-0.5">{teacher.lineBound ? "已綁定" : "使用 LINE 登入即自動綁定"}</p>
+              <p className="text-xs text-[#aaa] mt-0.5">{lineBound ? "已綁定，可用 LINE 快捷登入教師專區" : "綁定後可用 LINE 快捷登入"}</p>
             </div>
-            {teacher.lineBound
-              ? <span className="text-xs text-[#22c55e] font-medium">已綁定</span>
-              : <span className="text-xs text-[#ccc]">未綁定</span>
-            }
+            {lineBound ? (
+              <button
+                onClick={async () => {
+                  if (!confirm("確定要解除 LINE 綁定？")) return
+                  const res = await fetch("/api/teacher/profile", { method: "DELETE" })
+                  const d = await res.json()
+                  if (!res.ok || !d.ok) { alert(d.error ?? "解除失敗"); return }
+                  setLineBound(false)
+                }}
+                className="text-xs text-red-400 hover:text-red-600 transition-colors">
+                解除綁定
+              </button>
+            ) : (
+              <a href="/api/auth/line?mode=whoami&next=/m/teacher/profile"
+                className="text-xs px-3 py-1.5 rounded-full text-white font-medium"
+                style={{ backgroundColor: "#06C755" }}>
+                綁定
+              </a>
+            )}
           </div>
         </Section>
 

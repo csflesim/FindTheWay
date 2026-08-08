@@ -44,11 +44,19 @@ create table public.profiles (
   avatar_url   text,
   role         text not null default 'member'
                check (role in ('member', 'teacher', 'staff', 'admin')),
-  line_user_id text unique,
+  line_user_id text,             -- LINE 綁定（端內唯一：見下方 partial unique indexes）
+  phone        text,             -- 聯絡電話（電話＋密碼登入查表鍵）
+  contact_email text,            -- 聯絡 Email（後台人員 Email 登入查表鍵）
   created_at   timestamptz not null default now()
 );
 
 -- 註冊（含 LINE 登入建立的帳號）時自動建立 profile
+-- LINE ID 端內唯一（會員一組、後台一組；教師綁定存 teachers 表）
+create unique index if not exists profiles_line_member_key
+  on public.profiles (line_user_id) where line_user_id is not null and role = 'member';
+create unique index if not exists profiles_line_staff_key
+  on public.profiles (line_user_id) where line_user_id is not null and role in ('staff', 'admin');
+
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql

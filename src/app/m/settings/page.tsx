@@ -53,6 +53,9 @@ export default function SettingsPage() {
   const [name, setName] = useState("")
   const [nameDraft, setNameDraft] = useState("")
   const [email, setEmail] = useState("")
+  const [phone, setPhone] = useState("")
+  const [phoneDraft, setPhoneDraft] = useState("")
+  const [editingPhone, setEditingPhone] = useState(false)
   const [isLineAccount, setIsLineAccount] = useState(false)
   const [lineBound, setLineBound] = useState(false)
   const [editingName, setEditingName] = useState(false)
@@ -80,14 +83,52 @@ export default function SettingsPage() {
       setEmail(user.email ?? "")
       setIsLineAccount(user.user_metadata?.registered_via === "line")
       const { data: profile } = await supabase.from("profiles")
-        .select("name, line_user_id").eq("id", user.id).maybeSingle()
+        .select("name, line_user_id, phone").eq("id", user.id).maybeSingle()
       if (profile) {
         setName(profile.name || "")
         setNameDraft(profile.name || "")
         setLineBound(!!profile.line_user_id)
+        setPhone(profile.phone || "")
+        setPhoneDraft(profile.phone || "")
       }
     })
+    // LINE 綁定回跳（whoami 模式帶回 lineUserId）
+    const params = new URLSearchParams(window.location.search)
+    const lineUserId = params.get("lineUserId")
+    if (lineUserId) {
+      window.history.replaceState({}, "", "/m/settings")
+      fetch("/api/member/line-binding", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lineUserId }),
+      }).then(r => r.json()).then(d => {
+        if (d.ok) setLineBound(true)
+        else alert(d.error ?? "綁定失敗")
+      })
+    }
   }, [supabase])
+
+  async function savePhone() {
+    if (busy) return
+    setBusy(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setBusy(false); return }
+    const v = phoneDraft.replace(/[- ]/g, "")
+    if (v && !/^\d{8,15}$/.test(v)) { setBusy(false); alert("電話格式不正確"); return }
+    const { error } = await supabase.from("profiles").update({ phone: v || null }).eq("id", user.id)
+    setBusy(false)
+    if (error) { alert(`儲存失敗：${error.message}`); return }
+    setPhone(v)
+    setEditingPhone(false)
+  }
+
+  async function unbindLine() {
+    if (!confirm("確定要解除 LINE 綁定？解除後將無法使用 LINE 快捷登入。")) return
+    const res = await fetch("/api/member/line-binding", { method: "DELETE" })
+    const d = await res.json()
+    if (!res.ok || !d.ok) { alert(d.error ?? "解除失敗"); return }
+    setLineBound(false)
+  }
 
   function saveNotify(course: boolean, order: boolean) {
     try { localStorage.setItem(NOTIFY_KEY, JSON.stringify({ course, order })) } catch {}
@@ -167,16 +208,71 @@ export default function SettingsPage() {
           )}
           <div className="flex items-center justify-between px-4 py-3.5">
             <span className="text-sm">電子信箱</span>
-            <span className="text-sm text-[#aaa]">{isLineAccount ? "（LINE 帳號）" : email || "—"}</span>
+            <span className="text-sm text-[#aaa]">{email || "—"}</span>
           </div>
+          {editingPhone ? (
+            <div className="px-4 py-3.5 flex flex-col gap-2">
+              <label className="text-xs text-[#aaa]">手機號碼（可用於登入）</label>
+              <input
+                value={phoneDraft}
+                onChange={e => setPhoneDraft(e.target.value)}
+                placeholder="0912345678"
+                inputMode="tel"
+                className={inputCls}
+                autoFocus
+              />
+              <div className="flex gap-2 mt-1">
+                <button onClick={() => { setEditingPhone(false); setPhoneDraft(phone) }}
+                  className="flex-1 py-2 text-sm border border-[#f0f0f0] rounded-xl">取消</button>
+                <button onClick={savePhone} disabled={busy}
+                  className="flex-1 py-2 text-sm bg-black text-white rounded-xl disabled:opacity-40">
+                  {busy ? "儲存中…" : "儲存"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <Row label="手機號碼" value={phone || "未設定"} onClick={() => { setPhoneDraft(phone); setEditingPhone(true) }} />
+          )}
         </Section>
 
         {/* Password */}
         <Section title="安全性">
-          {isLineAccount ? (
-            <div className="px-4 py-3.5">
-              <p className="text-sm">密碼</p>
-              <p className="text-xs text-[#aaa] mt-0.5">此帳號透過 LINE 登入，無需密碼</p>
+          {isLineAccount && !editingPwd ? (
+            <Row label="設定密碼" value="設定後可用 Email／電話登入" onClick={() => setEditingPwd(true)} />
+          ) : isLineAccount && editingPwd ? (
+            <div className="px-4 py-3.5 flex flex-col gap-2">
+              <label className="text-xs text-[#aaa]">設定密碼（至少 8 位，供 Email／電話登入使用）</label>
+              <div className="relative">
+                <input
+                  type={showNew ? "text" : "password"}
+                  value={newPwd}
+                  onChange={e => setNewPwd(e.target.value)}
+                  placeholder="輸入新密碼"
+                  className={inputCls + " pr-10"}
+                />
+                <button onClick={() => setShowNew(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#aaa]">
+                  {showNew ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+              <div className="flex gap-2 mt-1">
+                <button onClick={() => { setEditingPwd(false); setNewPwd("") }}
+                  className="flex-1 py-2 text-sm border border-[#f0f0f0] rounded-xl">取消</button>
+                <button
+                  disabled={busy || newPwd.length < 8}
+                  onClick={async () => {
+                    if (busy) return
+                    setBusy(true)
+                    const { error } = await supabase.auth.updateUser({ password: newPwd })
+                    setBusy(false)
+                    if (error) { alert(`設定失敗：${error.message}`); return }
+                    alert("密碼已設定，之後可用 Email 或電話＋密碼登入")
+                    setEditingPwd(false); setNewPwd("")
+                  }}
+                  className="flex-1 py-2 text-sm bg-black text-white rounded-xl disabled:opacity-40">
+                  {busy ? "設定中…" : "儲存密碼"}
+                </button>
+              </div>
             </div>
           ) : editingPwd ? (
             <div className="px-4 py-3.5 flex flex-col gap-2">
@@ -234,12 +330,19 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between px-4 py-3.5">
             <div>
               <p className="text-sm">LINE 帳號綁定</p>
-              <p className="text-xs text-[#aaa] mt-0.5">{lineBound ? "已綁定" : "使用 LINE 登入即自動綁定"}</p>
+              <p className="text-xs text-[#aaa] mt-0.5">{lineBound ? "已綁定，可用 LINE 快捷登入" : "綁定後可用 LINE 快捷登入"}</p>
             </div>
-            {lineBound
-              ? <span className="text-xs text-[#22c55e] font-medium">已綁定</span>
-              : <span className="text-xs text-[#ccc]">未綁定</span>
-            }
+            {lineBound ? (
+              <button onClick={unbindLine} className="text-xs text-red-400 hover:text-red-600 transition-colors">
+                解除綁定
+              </button>
+            ) : (
+              <a href="/api/auth/line?mode=whoami&next=/m/settings"
+                className="text-xs px-3 py-1.5 rounded-full text-white font-medium"
+                style={{ backgroundColor: "#06C755" }}>
+                綁定
+              </a>
+            )}
           </div>
         </Section>
 

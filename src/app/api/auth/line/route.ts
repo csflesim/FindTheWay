@@ -47,5 +47,16 @@ export async function GET(req: Request) {
       path: "/",
     })
   }
+
+  // 端口分流：member（預設）/ teacher / staff——callback 只查該端自己的表
+  const portal = url.searchParams.get("portal")
+  if (portal && ["member", "teacher", "staff"].includes(portal)) {
+    res.cookies.set("line_portal", portal, {
+      httpOnly: true,
+      sameSite: "lax",
+      maxAge: 300,
+      path: "/",
+    })
+  }
   return res
 }

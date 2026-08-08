@@ -3,7 +3,6 @@
 import { Suspense, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Eye, EyeOff } from "lucide-react"
-import { createClient } from "@/lib/supabase/client"
 
 function LoginForm() {
   const router = useRouter()
@@ -13,7 +12,8 @@ function LoginForm() {
   const [showPw, setShowPw] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(
-    searchParams.get("error") === "forbidden" ? "此帳號沒有後台權限" : ""
+    searchParams.get("error") === "forbidden" ? "此帳號沒有後台權限"
+      : searchParams.get("error") === "line_unbound" ? "此 LINE 尚未綁定任何後台人員，請先以帳密登入後在個人設定綁定" : ""
   )
 
   async function handleSubmit(e: React.FormEvent) {
@@ -24,27 +24,20 @@ function LoginForm() {
       return
     }
     setLoading(true)
-    const supabase = createClient()
-    // 允許輸入純帳號（如 "admin"），自動補上系統網域
-    const loginEmail = email.includes("@") ? email : `${email}@findtheway.com`
-    const { data, error: signInError } = await supabase.auth.signInWithPassword({ email: loginEmail, password })
-    if (signInError || !data.user) {
-      setLoading(false)
-      setError("帳號或密碼錯誤，請再試一次")
-      return
-    }
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", data.user.id)
-      .maybeSingle()
-    if (!profile || !["staff", "admin"].includes(profile.role)) {
-      await supabase.auth.signOut()
-      setLoading(false)
-      setError("此帳號沒有後台權限")
+    // 後台只查人員表：帳號（自動補網域）／Email／電話 → 驗證密碼
+    const res = await fetch("/api/auth/portal-login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ portal: "staff", identifier: email.trim(), password }),
+    })
+    const d = await res.json()
+    setLoading(false)
+    if (!res.ok || !d.ok) {
+      setError(d.error ?? "登入失敗")
       return
     }
     router.replace("/sys-admin")
+    router.refresh()
   }
 
   return (
@@ -67,7 +60,7 @@ function LoginForm() {
               <input
                 type="text"
                 autoComplete="username"
-                placeholder="輸入帳號或 Email"
+                placeholder="帳號 / Email / 手機號碼"
                 value={email}
                 onChange={e => { setEmail(e.target.value); setError("") }}
                 className="w-full px-3 py-2.5 text-sm bg-[#fafaf9] border border-[#f0f0f0] rounded-xl outline-none focus:border-black focus:bg-white transition-colors"
@@ -117,7 +110,7 @@ function LoginForm() {
 
           {/* LINE login */}
           <a
-            href="/api/auth/line?next=/sys-admin"
+            href="/api/auth/line?portal=staff&next=/sys-admin"
             className="w-full flex items-center justify-center gap-2.5 py-2.5 rounded-xl text-sm font-medium text-white transition-opacity hover:opacity-90 active:opacity-80"
             style={{ backgroundColor: "#06C755" }}
           >

@@ -18,8 +18,9 @@ Next.js App Router + **Supabase**（Postgres / Auth / Storage）正式系統，�
 
 - 單一 `profiles` 表（1:1 `auth.users`），`role`：`member` / `teacher` / `staff` / `admin`
 - **會員**：LINE 純身份驗證 + Email 必綁。首次 LINE 登入不建帳號——身分暫存 HMAC 簽章 cookie（`src/lib/line-pending.ts`，30 分鐘），導向 `/m/bind-email` 輸入 Email + 驗證碼，通過後才 `createUser`（真實信箱、metadata 含 `line_user_id` 與 `registered_via: line`，trigger 自動建 profile）並簽入 session；之後 LINE 登入以 `profiles.line_user_id` 直查放行
-- **教師**：`/m/teacher/login`（Email 密碼或 LINE）。`/api/teacher/me` 以 email / LINE userId 比對 `teachers` 表並自動綁定 `profile_id`、把 role 升級為 `teacher`（RLS 依此放行點名等操作）
-- **後台**：`/sys-admin/login`，輸入純帳號自動補 `@findtheway.com`；proxy（`src/proxy.ts`）強制 `/sys-admin/*` 需 `staff`/`admin`，`/m` 個人頁需登入
+- **教師**：獨立教師帳號（`teacher-<教師ID>@login.findtheway.app`，由後台教師管理建立/重設）。登入 `/m/teacher/login` 輸入 Email/電話 → 查 `teachers` 表 → 專屬帳號驗密碼；或 LINE（對照 `teachers.line_user_id`）。`/api/teacher/me` 只認 `role=teacher` 且 `teachers.profile_id` 綁定的帳號，不再自動綁定/升級
+- **後台**：`/sys-admin/login`，帳號（自動補 `@findtheway.com`）/聯絡 Email/電話＋密碼，或 LINE；proxy（`src/proxy.ts`）強制 `/sys-admin/*` 需 `staff`/`admin`，`/m` 個人頁需 `member`
+- **三端帳號分割**：會員/教師/後台人員是獨立的表與帳號，同一人可在三端各有身分（Email/電話/LINE ID 為聯絡資料可跨表重複）。統一登入 `/api/auth/portal-login`（portal + identifier + password → 查該端表 → 識別碼帳號驗密碼 → 驗 role 相符）；LINE 登入以 `?portal=member|teacher|staff` 分流，各端只查自己的表。三端登入後皆可綁/解綁 LINE（會員設定、教師個人資料、後台系統/個人設定），LINE ID 端內唯一（partial unique indexes）
 - RLS：公開目錄（課程/老師/banner/商品/線上課）匿名可讀；會員只能讀寫自己的訂單/票券/學員；`is_staff()`（security definer）給後台全權
 - 後台 API 一律經 `requireStaff()`（`src/lib/admin-guard.ts`）守門
 
