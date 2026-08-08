@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { Plus, Search, X, Trash2, ClipboardList, ChevronLeft, ChevronRight, Upload, CalendarDays } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { uploadImage } from "@/lib/upload"
-import { expandScheduleToMonth, mergeMonthEvents, type ScheduleEvent } from "@/lib/schedule"
+import { expandScheduleToMonth, mergeMonthEvents, upcomingSessions, type ScheduleEvent } from "@/lib/schedule"
 
 type AttendRecord = { name: string; status: "出席" | "延期" | "缺席"; ticketId?: string; ticketNo?: string }
 type Session = { id: string | null; date: string; records: AttendRecord[] }
@@ -398,6 +398,7 @@ export default function CoursesPage() {
   const [form, setForm] = useState(EMPTY_FORM)
   const [attendCourse, setAttendCourse] = useState<Course | null>(null)
   const [linkCopied, setLinkCopied] = useState(false)
+  const [addDateOpen, setAddDateOpen] = useState(false)
   const [sessions, setSessions] = useState<Session[]>([])
   const [sessionIdx, setSessionIdx] = useState(0)
   const [newName, setNewName] = useState("")
@@ -609,11 +610,11 @@ export default function CoursesPage() {
 
   function closeAttend() { setAttendCourse(null); setSessions([]) }
 
-  async function addSession(c: Course) {
-    const today = new Date()
-    const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`
-    if (sessions.some(s => s.date.replace(/\//g, "-") === date)) {
-      setSessionIdx(sessions.findIndex(s => s.date.replace(/\//g, "-") === date))
+  async function addSession(c: Course, date: string) {
+    setAddDateOpen(false)
+    const idx = sessions.findIndex(s => s.date.replace(/\//g, "-") === date)
+    if (idx >= 0) {
+      await selectSession(c, sessions, idx)
       return
     }
     const roster = (await loadRoster(c, date)) ?? []
@@ -1202,10 +1203,26 @@ export default function CoursesPage() {
                     <ChevronRight size={16} />
                   </button>
                 </div>
-                <button onClick={() => addSession(attendCourse)}
-                  className="flex items-center gap-1 text-xs text-[#999] hover:text-black border border-[#f0f0f0] px-2.5 py-1.5 rounded-lg hover:border-black transition-colors">
-                  <Plus size={12} />新增課堂
-                </button>
+                <div className="relative">
+                  <button onClick={() => setAddDateOpen(v => !v)}
+                    className="flex items-center gap-1 text-xs text-[#999] hover:text-black border border-[#f0f0f0] px-2.5 py-1.5 rounded-lg hover:border-black transition-colors">
+                    <Plus size={12} />選擇課堂
+                  </button>
+                  {addDateOpen && (
+                    <div className="absolute right-0 top-full mt-1 z-30 bg-white border border-[#f0f0f0] rounded-xl shadow-lg overflow-hidden w-44">
+                      {upcomingSessions(attendCourse.schedule, 6).map(s => (
+                        <button key={s.date} onClick={() => addSession(attendCourse, s.date)}
+                          className="w-full text-left px-4 py-2.5 text-xs hover:bg-[#f9f9f9] transition-colors">
+                          {s.date.replace(/-/g, "/")}
+                          <span className="text-[#bbb] ml-1.5">{s.time}</span>
+                        </button>
+                      ))}
+                      {upcomingSessions(attendCourse.schedule, 6).length === 0 && (
+                        <p className="px-4 py-3 text-xs text-[#ccc]">班表無未來場次</p>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Stats */}

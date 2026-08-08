@@ -46,7 +46,7 @@ export function ticketHolder(t: TicketLite): string | null {
 
 export function unusedCountFor(orders: MemberOrderLite[], studentId: string | null): number {
   return orders
-    .filter(o => o.status === "已付款")
+    .filter(o => o.status === "已付款" || o.status === "已售後")
     .flatMap(o => o.tickets)
     .filter(t => t.status === "未使用" && ticketHolder(t) === studentId)
     .length

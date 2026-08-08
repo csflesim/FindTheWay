@@ -75,9 +75,10 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
       if (user && c) {
         const [{ data: profile }, { data: paidOrders }, { data: students }] = await Promise.all([
           supabase.from("profiles").select("id, name, role").eq("id", user.id).maybeSingle(),
+          // 已售後訂單中未被收回的券仍可使用——可用性看券本身狀態
           supabase.from("orders")
             .select("id, product_id, item_name, status, student:students!student_id(name), tickets(id, ticket_no, status, expires_at, transferee:students!transferred_to(name))")
-            .eq("status", "已付款"),
+            .in("status", ["已付款", "已售後"]),
           supabase.from("students").select("id, name").eq("status", "已核准").order("created_at"),
         ])
         if (profile?.role === "member") {

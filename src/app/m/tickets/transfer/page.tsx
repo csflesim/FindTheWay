@@ -39,7 +39,7 @@ export default function TransferPage() {
     const nameOf = (sid: string | null) =>
       sid == null ? selfName : (students.find(s => s.id === sid)?.name ?? "學員")
     return orders
-      .filter(o => o.status === "已付款" && o.tickets.length > 0 && o.product?.transferable)
+      .filter(o => (o.status === "已付款" || o.status === "已售後") && o.tickets.length > 0 && o.product?.transferable)
       .map(o => ({
         orderId: o.id,
         name: o.item_name,

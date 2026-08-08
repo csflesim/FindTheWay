@@ -83,7 +83,7 @@ export default function OrdersPage() {
 
   // 課堂券餘額：已付款且有票券的訂單
   const ticketBalances = orders
-    .filter(o => o.payStatus === "已付款" && o.tickets.length > 0)
+    .filter(o => (o.payStatus === "已付款" || o.payStatus === "已售後") && o.tickets.length > 0)
     .map(o => ({
       id: o.id,
       name: o.item,

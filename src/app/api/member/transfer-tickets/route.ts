@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   if (!order || order.member_id !== user.id) {
     return NextResponse.json({ error: "找不到訂單" }, { status: 404 })
   }
-  if (order.status !== "已付款") {
+  if (order.status !== "已付款" && order.status !== "已售後") {
     return NextResponse.json({ error: "此訂單無可轉讓票券" }, { status: 400 })
   }
   // 券包商品必須開啟可轉讓
