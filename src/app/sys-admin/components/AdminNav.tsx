@@ -8,7 +8,7 @@ import {
   LayoutDashboard, BookOpen, Ticket,
   Users, ShoppingBag, ClipboardList,
   LogOut, Menu, X, UserCircle, GraduationCap, Wallet,
-  Settings2, UserCog, Shield, SlidersHorizontal, ChevronDown, Building2, LayoutGrid, CreditCard, Smartphone, MonitorPlay, MessageSquare, Zap, RotateCcw,
+  Settings2, UserCog, Shield, SlidersHorizontal, ChevronDown, Bell, Building2, LayoutGrid, CreditCard, Smartphone, MonitorPlay, MessageSquare, Zap, RotateCcw,
 } from "lucide-react"
 
 type Me = { name: string; role: string; avatar_url: string | null }
@@ -42,12 +42,14 @@ async function logout() {
   window.location.href = "/sys-admin/login"
 }
 
-function Avatar({ me, size }: { me: Me | null; size: string }) {
+function Avatar({ me, size, dark }: { me: Me | null; size: string; dark?: boolean }) {
   if (me?.avatar_url) {
     return <img src={me.avatar_url} alt="頭貼" className={`${size} rounded-full shrink-0 object-cover`} />
   }
   return (
-    <div className={`${size} rounded-full shrink-0 bg-white/20 flex items-center justify-center text-white text-xs`}>
+    <div className={`${size} rounded-full shrink-0 flex items-center justify-center text-xs ${
+      dark ? "bg-white/20 text-white" : "bg-black text-white"
+    }`}>
       {me?.name?.charAt(0) ?? "…"}
     </div>
   )
@@ -118,7 +120,13 @@ export function UserMenu({ me, dark }: { me: Me | null; dark?: boolean }) {
           dark ? "hover:bg-white/10" : "hover:bg-[#f5f5f5]"
         }`}
       >
-        <Avatar me={me} size="w-8 h-8" />
+        <Avatar me={me} size="w-8 h-8" dark={dark} />
+        <div className="text-left hidden md:block">
+          <p className={`text-sm font-medium leading-tight ${dark ? "text-white" : ""}`}>{me?.name ?? "…"}</p>
+          <p className={`text-[10px] leading-tight ${dark ? "text-white/50" : "text-[#999]"}`}>
+            {me ? (ROLE_LABELS[me.role] ?? me.role) : ""}
+          </p>
+        </div>
         <ChevronDown size={13} className={dark ? "text-white/50" : "text-[#999]"} />
       </button>
       {open && (
@@ -149,11 +157,26 @@ export function UserMenu({ me, dark }: { me: Me | null; dark?: boolean }) {
   )
 }
 
-/** 桌面版內容區頂欄：右上角頭像選單 */
+/** 通知鈴鐺（通知中心與排程整併時接上實際內容） */
+function BellButton({ dark }: { dark?: boolean }) {
+  return (
+    <button
+      title="通知"
+      className={`p-2 rounded-full transition-colors ${
+        dark ? "text-white/50 hover:text-white hover:bg-white/10" : "text-[#999] hover:text-black hover:bg-[#f5f5f5]"
+      }`}
+    >
+      <Bell size={17} strokeWidth={1.5} />
+    </button>
+  )
+}
+
+/** 桌面版內容區頂欄：右上角鈴鐺＋頭像選單 */
 export function AdminHeader() {
   const me = useMe()
   return (
-    <div className="hidden lg:flex items-center justify-end h-12 px-4 bg-white border-b border-[#ebebeb] sticky top-0 z-30">
+    <div className="hidden lg:flex items-center justify-end gap-1 h-12 px-4 bg-white border-b border-[#ebebeb] sticky top-0 z-30">
+      <BellButton />
       <UserMenu me={me} />
     </div>
   )
@@ -280,6 +303,7 @@ export default function AdminNav() {
           <Menu size={20} />
         </button>
         <p className="text-sm font-medium flex-1">管理後台</p>
+        <BellButton dark />
         <UserMenu me={me} dark />
       </header>
 
