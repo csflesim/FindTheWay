@@ -16,6 +16,10 @@ export type MemberCourse = {
   highlights: string[]
   imgSquare?: string
   imgLandscape?: string
+  schedule: string        // 班表原文（展開場次用）
+  capacity: number
+  types: string[]         // 內部 / 外部
+  ticketTypes: string[]   // 可使用課堂券（商品 id）
 }
 
 type CourseRow = {
@@ -27,6 +31,8 @@ type CourseRow = {
   capacity: number
   enrolled: number
   price: number
+  types: string[]
+  ticket_types: string[]
   description: string | null
   highlights: string[]
   cover_url: string | null
@@ -35,7 +41,7 @@ type CourseRow = {
   course_teachers: { teacher: { name: string; photo_url: string | null } | null }[]
 }
 
-const SELECT = "id, title, category, age, schedule, capacity, enrolled, price, description, highlights, cover_url, banner_url, classroom:classrooms(name), course_teachers(teacher:teachers(name, photo_url))"
+const SELECT = "id, title, category, age, schedule, capacity, enrolled, price, types, ticket_types, description, highlights, cover_url, banner_url, classroom:classrooms(name), course_teachers(teacher:teachers(name, photo_url))"
 
 function splitSchedule(schedule: string): { date: string; time: string } {
   const i = schedule.indexOf(" ")
@@ -62,6 +68,10 @@ function fromRow(r: CourseRow): MemberCourse {
     highlights: r.highlights ?? [],
     imgSquare: r.cover_url ?? undefined,
     imgLandscape: r.banner_url ?? undefined,
+    schedule: r.schedule,
+    capacity: r.capacity,
+    types: r.types ?? [],
+    ticketTypes: r.ticket_types ?? [],
   }
 }
 

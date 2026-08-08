@@ -9,6 +9,7 @@ type TicketPackage = {
   name: string
   qty: number
   price: number
+  isSingle: boolean
   expireMonths: number
   cancelHours: number
   transferable: boolean
@@ -22,6 +23,7 @@ type ProductRow = {
   name: string
   sessions: number
   price: number
+  is_single: boolean
   validity_months: number
   cancel_hours: number
   transferable: boolean
@@ -34,6 +36,7 @@ const EMPTY_FORM = {
   name: "",
   qty: 1,
   price: 0,
+  isSingle: false,
   expireMonths: 12,
   cancelHours: 24,
   transferable: false,
@@ -92,7 +95,7 @@ export default function TicketsPage() {
       const soldOf = (id: string) =>
         orders.filter(o => o.product_id === id && (o.status === "已付款" || o.status === "已售後")).length
       setPackages((pRes.data as ProductRow[]).map(r => ({
-        id: r.id, name: r.name, qty: r.sessions, price: r.price,
+        id: r.id, name: r.name, qty: r.sessions, price: r.price, isSingle: r.is_single,
         expireMonths: r.validity_months, cancelHours: r.cancel_hours,
         transferable: r.transferable, active: r.active,
         sold: soldOf(r.id), notes: r.notes ?? "",
@@ -112,6 +115,7 @@ export default function TicketsPage() {
       name: pkg.name,
       qty: pkg.qty,
       price: pkg.price,
+      isSingle: pkg.isSingle,
       expireMonths: pkg.expireMonths,
       cancelHours: pkg.cancelHours,
       transferable: pkg.transferable,
@@ -129,8 +133,9 @@ export default function TicketsPage() {
   function formToRow() {
     return {
       name: form.name.trim(),
-      sessions: form.qty,
+      sessions: form.isSingle ? 1 : form.qty,
       price: form.price,
+      is_single: form.isSingle,
       validity_months: form.expireMonths,
       cancel_hours: form.cancelHours,
       transferable: form.transferable,
@@ -149,7 +154,7 @@ export default function TicketsPage() {
     if (error) { alert(`新增失敗：${error.message}`); return }
     const r = data as ProductRow
     setPackages(prev => [...prev, {
-      id: r.id, name: r.name, qty: r.sessions, price: r.price,
+      id: r.id, name: r.name, qty: r.sessions, price: r.price, isSingle: r.is_single,
       expireMonths: r.validity_months, cancelHours: r.cancel_hours,
       transferable: r.transferable, active: r.active, sold: 0, notes: r.notes ?? "",
     }])
@@ -164,7 +169,7 @@ export default function TicketsPage() {
     if (error) { alert(`儲存失敗：${error.message}`); return }
     setPackages(prev => prev.map(p =>
       p.id === editing.id
-        ? { ...p, name: form.name, qty: form.qty, price: form.price, expireMonths: form.expireMonths, cancelHours: form.cancelHours, transferable: form.transferable, active: form.active, notes: form.notes || undefined }
+        ? { ...p, name: form.name, qty: form.isSingle ? 1 : form.qty, price: form.price, isSingle: form.isSingle, expireMonths: form.expireMonths, cancelHours: form.cancelHours, transferable: form.transferable, active: form.active, notes: form.notes || undefined }
         : p
     ))
     close()
@@ -211,7 +216,7 @@ export default function TicketsPage() {
             <div className="flex items-start justify-between mb-4">
               <div>
                 <p className="text-sm font-medium">{pkg.name}</p>
-                <p className="text-xs text-[#999] mt-0.5">{pkg.qty} 堂 / set</p>
+                <p className="text-xs text-[#999] mt-0.5">{pkg.isSingle ? "單堂" : `${pkg.qty} 堂 / set`}</p>
               </div>
               <span className={`text-[10px] px-2 py-0.5 rounded-full border ${
                 pkg.active ? "border-black text-black" : "border-[#ddd] text-[#aaa]"
@@ -264,13 +269,35 @@ export default function TicketsPage() {
               />
             </Field>
 
+            <Field label="型別">
+              <div className="flex gap-2">
+                {([false, true] as const).map(v => (
+                  <button
+                    key={String(v)}
+                    onClick={() => { set("isSingle", v); if (v) set("qty", 1) }}
+                    className={`flex-1 py-2 text-sm rounded-xl border transition-colors ${
+                      form.isSingle === v
+                        ? "bg-black text-white border-black"
+                        : "bg-[#fafaf9] text-[#555] border-[#f0f0f0] hover:border-[#ccc]"
+                    }`}
+                  >
+                    {v ? "單堂" : "券包"}
+                  </button>
+                ))}
+              </div>
+              {form.isSingle && (
+                <p className="text-[11px] text-[#bbb] mt-1.5">單堂型別堂數固定為 1，可作為課程直接報名的計價商品</p>
+              )}
+            </Field>
+
             <div className="grid grid-cols-2 gap-4">
               <Field label="堂數">
                 <input
                   type="number"
                   min={1}
-                  className={inputCls}
-                  value={form.qty}
+                  disabled={form.isSingle}
+                  className={`${inputCls} ${form.isSingle ? "opacity-50" : ""}`}
+                  value={form.isSingle ? 1 : form.qty}
                   onChange={e => set("qty", Number(e.target.value))}
                 />
               </Field>

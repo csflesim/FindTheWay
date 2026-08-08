@@ -1,16 +1,17 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { withEvent } from "@/lib/ticket-history"
+import { syncCourseEnrollment } from "@/lib/workflow-engine"
 
-// 儲存點名並自動核銷課堂券：
-// - 「出席」的學生：找一張其名下（或本人）未使用票券標記「已使用」，票券 id 記回 records
-// - 從出席改成缺席/延期：把先前核銷的那張票券退回「未使用」
-// - 課程若設定「可使用課堂券」（courses.ticket_types 存商品 id），只核銷對應券包的票券
-// - 以「課堂券扣抵」訂單報名的人：確認付款時已扣過一張，點名不再扣
-//   （每張扣抵訂單抵一堂——records 記 deductOrderId，佔用過的日期以外仍正常扣券）
-// 權限：後台人員或教師（教師需為該課程的授課老師）。
+// 儲存點名（券的唯一核銷路徑）：
+// - 內部課程：名冊＝綁定該堂的券
+//   出席 → 核銷（已使用）；缺席 → 照樣核銷（沒依期限取消＝視同使用）；延期 → 券退回未使用（解除綁定）
+//   誤點修正：已核銷改回延期會退券；延期在畫面上改回出席會重新綁定核銷
+// - 外部課程：純點名記錄，不碰券
+// 權限：後台人員或該課程授課教師。
 
-type InRecord = { name: string; status: string; ticketId?: string | null; deductOrderId?: string | null }
+type InRecord = { name: string; status: string; ticketId?: string | null }
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient()
@@ -37,162 +38,68 @@ export async function POST(req: NextRequest) {
     if (!link) return NextResponse.json({ error: "非此課程授課教師" }, { status: 403 })
   }
 
-  // ── 課程限定可用券別（商品 id；空陣列 = 不限）──
-  const { data: courseRow } = await admin.from("courses")
-    .select("ticket_types").eq("id", courseId).maybeSingle()
-  const allowedProducts = ((courseRow?.ticket_types ?? []) as string[])
-    .filter(v => /^[0-9a-f-]{36}$/i.test(v))   // 僅認 uuid，舊名稱字串視為不限
+  const { data: course } = await admin.from("courses").select("types, title").eq("id", courseId).maybeSingle()
+  if (!course) return NextResponse.json({ error: "找不到課程" }, { status: 404 })
+  const internal = (course.types ?? []).includes("內部")
 
-  // ── 既有紀錄（取得先前核銷對照）──
-  const { data: existing } = await admin
-    .from("course_attendance")
-    .select("id, records")
-    .eq("course_id", courseId)
-    .eq("date", date)
-    .maybeSingle()
-  const prevTicketByName = new Map(
-    ((existing?.records ?? []) as InRecord[])
-      .filter(r => r.ticketId)
-      .map(r => [r.name, r.ticketId as string])
-  )
-  const prevDeductByName = new Map(
-    ((existing?.records ?? []) as InRecord[])
-      .filter(r => r.deductOrderId)
-      .map(r => [r.name, r.deductOrderId as string])
-  )
+  // ── 內部課程：依點名結果轉移券狀態 ──
+  if (internal) {
+    const ids = records.map(r => r.ticketId).filter(Boolean) as string[]
+    if (ids.length > 0) {
+      const { data: tickets } = await admin
+        .from("tickets")
+        .select("id, status, course_id, session_date, history")
+        .in("id", ids)
+      const byId = new Map((tickets ?? []).map(t => [t.id, t]))
 
-  // ── 課堂券扣抵報名的抵扣額度：一張扣抵訂單抵一堂 ──
-  const { data: deductOrders } = await admin
-    .from("orders")
-    .select("id, student_id, member_id")
-    .eq("course_id", courseId)
-    .eq("status", "已付款")
-    .like("notes", "課堂券扣抵%")
-  // 其他日期已佔用的扣抵訂單
-  const usedDeducts = new Set<string>()
-  if ((deductOrders ?? []).length > 0) {
-    const { data: otherRows } = await admin
-      .from("course_attendance")
-      .select("date, records")
-      .eq("course_id", courseId)
-      .neq("date", date)
-    for (const row of otherRows ?? []) {
-      for (const r of (row.records ?? []) as InRecord[]) {
-        if (r.deductOrderId) usedDeducts.add(r.deductOrderId)
-      }
-    }
-  }
+      for (const r of records) {
+        if (!r.ticketId) continue
+        const t = byId.get(r.ticketId)
+        if (!t) continue
 
-  // 名字 → 學員 id / 會員 id（供票券查找與扣抵訂單比對共用）
-  async function resolvePerson(name: string): Promise<{ studentId: string | null; memberId: string | null }> {
-    const { data: student } = await admin.from("students")
-      .select("id").eq("name", name).eq("status", "已核准").limit(1).maybeSingle()
-    const { data: member } = await admin.from("profiles")
-      .select("id").eq("name", name).limit(1).maybeSingle()
-    return { studentId: student?.id ?? null, memberId: member?.id ?? null }
-  }
-
-  // 此人是否有尚未佔用的扣抵訂單（訂單指定學員→比對學員；未指定→比對會員本人）
-  function findFreeDeduct(p: { studentId: string | null; memberId: string | null }): string | null {
-    for (const o of deductOrders ?? []) {
-      if (usedDeducts.has(o.id)) continue
-      const match = o.student_id ? o.student_id === p.studentId : o.member_id === p.memberId
-      if (match) return o.id
-    }
-    return null
-  }
-
-  // ── 找學生名下可核銷的票券 ──
-  async function findTicketFor(p: { studentId: string | null; memberId: string | null }): Promise<string | null> {
-    // 學員 → 該學員持有（含受讓）的未使用券
-    if (p.studentId) {
-      let q = admin.from("tickets")
-        .select("id, expires_at, orders!inner(product_id)")
-        .eq("status", "未使用")
-        .or(`transferred_to.eq.${p.studentId},and(transferred_to.is.null,student_id.eq.${p.studentId})`)
-      if (allowedProducts.length > 0) q = q.in("orders.product_id", allowedProducts)
-      const { data: t } = await q
-        .order("expires_at", { ascending: true, nullsFirst: false })
-        .limit(1)
-        .maybeSingle()
-      if (t) return t.id
-    }
-    // 會員本人 → 其訂單中未指定學員且未轉讓的未使用券
-    if (p.memberId) {
-      let oq = admin.from("orders")
-        .select("id").eq("member_id", p.memberId).eq("status", "已付款")
-      if (allowedProducts.length > 0) oq = oq.in("product_id", allowedProducts)
-      const { data: orders } = await oq
-      const orderIds = (orders ?? []).map(o => o.id)
-      if (orderIds.length > 0) {
-        const { data: t } = await admin.from("tickets")
-          .select("id")
-          .eq("status", "未使用")
-          .is("student_id", null)
-          .is("transferred_to", null)
-          .in("order_id", orderIds)
-          .order("expires_at", { ascending: true, nullsFirst: false })
-          .limit(1)
-          .maybeSingle()
-        if (t) return t.id
-      }
-    }
-    return null
-  }
-
-  // ── 逐筆處理核銷 / 退回 ──
-  const outRecords: InRecord[] = []
-  for (const r of records) {
-    const prevTicket = prevTicketByName.get(r.name) ?? r.ticketId ?? null
-    const prevDeduct = prevDeductByName.get(r.name) ?? null
-    if (r.status === "出席") {
-      if (prevTicket) {
-        outRecords.push({ name: r.name, status: r.status, ticketId: prevTicket })
-      } else if (prevDeduct) {
-        // 本日已用扣抵額度抵過 → 維持
-        usedDeducts.add(prevDeduct)
-        outRecords.push({ name: r.name, status: r.status, deductOrderId: prevDeduct })
-      } else {
-        const person = await resolvePerson(r.name)
-        // 以「課堂券扣抵」報名者：確認付款時已扣過，這裡佔用額度、不再扣券
-        const deductId = findFreeDeduct(person)
-        if (deductId) {
-          usedDeducts.add(deductId)
-          outRecords.push({ name: r.name, status: r.status, deductOrderId: deductId })
-        } else {
-          const ticketId = await findTicketFor(person)
-          if (ticketId) {
-            await admin.from("tickets")
-              .update({ status: "已使用", used_at: new Date().toISOString() })
-              .eq("id", ticketId)
-            outRecords.push({ name: r.name, status: r.status, ticketId })
-          } else {
-            outRecords.push({ name: r.name, status: r.status })   // 無券可扣，僅記出席
+        if (r.status === "出席" || r.status === "缺席") {
+          // 要核銷：待使用（或誤退回的未使用）→ 已使用
+          if (t.status !== "已使用") {
+            const history = t.status === "未使用"
+              ? withEvent(withEvent(t.history, "報名", `${course.title} ${date.replace(/-/g, "/")}`), r.status === "出席" ? "核銷（出席）" : "核銷（缺席）")
+              : withEvent(t.history, r.status === "出席" ? "核銷（出席）" : "核銷（缺席）")
+            const { error } = await admin.from("tickets").update({
+              status: "已使用",
+              used_at: new Date().toISOString(),
+              course_id: courseId,
+              session_date: date,
+              history,
+            }).eq("id", t.id)
+            if (error) return NextResponse.json({ error: `核銷失敗：${error.message}` }, { status: 500 })
+          }
+        } else if (r.status === "延期") {
+          // 延期：券退回未使用、解除綁定，之後可重新報名任何場次
+          if (t.status !== "未使用") {
+            const { error } = await admin.from("tickets").update({
+              status: "未使用",
+              used_at: null,
+              course_id: null,
+              session_date: null,
+              history: withEvent(t.history, "延期退回", `${course.title} ${date.replace(/-/g, "/")}`),
+            }).eq("id", t.id)
+            if (error) return NextResponse.json({ error: `退回失敗：${error.message}` }, { status: 500 })
           }
         }
       }
-    } else {
-      if (prevTicket) {
-        // 出席改缺席/延期 → 退回票券
-        await admin.from("tickets")
-          .update({ status: "未使用", used_at: null })
-          .eq("id", prevTicket)
-          .eq("status", "已使用")
-      }
-      // 扣抵額度不用退——紀錄不再帶 deductOrderId 即釋出，可供其他日期使用
-      outRecords.push({ name: r.name, status: r.status })
     }
-    prevTicketByName.delete(r.name)
-  }
-  // 名單中被移除、但先前有核銷的 → 退回
-  for (const ticketId of prevTicketByName.values()) {
-    await admin.from("tickets")
-      .update({ status: "未使用", used_at: null })
-      .eq("id", ticketId)
-      .eq("status", "已使用")
   }
 
   // ── 寫入點名紀錄 ──
+  const outRecords = records.map(r => ({
+    name: r.name, status: r.status,
+    ...(r.ticketId ? { ticketId: r.ticketId } : {}),
+  }))
+  const { data: existing } = await admin
+    .from("course_attendance")
+    .select("id")
+    .eq("course_id", courseId)
+    .eq("date", date)
+    .maybeSingle()
   let rowId = existing?.id ?? null
   if (rowId) {
     const { error } = await admin.from("course_attendance").update({ records: outRecords }).eq("id", rowId)
@@ -205,6 +112,8 @@ export async function POST(req: NextRequest) {
     rowId = data.id
   }
 
-  const consumed = outRecords.filter(r => r.ticketId).length
-  return NextResponse.json({ ok: true, rowId, records: outRecords, consumed })
+  if (internal) await syncCourseEnrollment(courseId)
+
+  const consumed = records.filter(r => r.ticketId && (r.status === "出席" || r.status === "缺席")).length
+  return NextResponse.json({ ok: true, rowId, consumed })
 }

@@ -6,8 +6,8 @@ import { createClient } from "@/lib/supabase/client"
 import { uploadImage } from "@/lib/upload"
 import { expandScheduleToMonth, mergeMonthEvents, type ScheduleEvent } from "@/lib/schedule"
 
-type AttendRecord = { name: string; status: "出席" | "請假" | "缺席" }
-type Session = { id: string; date: string; records: AttendRecord[] }
+type AttendRecord = { name: string; status: "出席" | "延期" | "缺席"; ticketId?: string; ticketNo?: string }
+type Session = { id: string | null; date: string; records: AttendRecord[] }
 
 type Course = {
   id: string
@@ -389,7 +389,7 @@ export default function CoursesPage() {
   const [teachers, setTeachers] = useState<TeacherRef[]>([])
   const [classrooms, setClassrooms] = useState<ClassroomRef[]>([])
   const [unitOptions, setUnitOptions] = useState<UnitRef[]>([])
-  const [ticketOptions, setTicketOptions] = useState<{ value: string; label: string }[]>([])
+  const [ticketOptions, setTicketOptions] = useState<{ value: string; label: string; isSingle: boolean }[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [query, setQuery] = useState("")
@@ -407,7 +407,7 @@ export default function CoursesPage() {
       supabase.from("teachers").select("id, name").order("created_at"),
       supabase.from("classrooms").select("id, name").order("created_at"),
       supabase.from("units").select("id, name, sub_units").order("created_at"),
-      supabase.from("products").select("id, name").eq("active", true).order("sort_order"),
+      supabase.from("products").select("id, name, is_single").eq("active", true).order("sort_order"),
     ]).then(([cRes, tRes, roomRes, uRes, pRes]) => {
       if (cRes.error) console.error("載入課程失敗:", cRes.error.message)
       else setCourses((cRes.data as CourseRow[]).map(fromRow))
@@ -416,7 +416,8 @@ export default function CoursesPage() {
       setUnitOptions(((uRes.data ?? []) as { id: string; name: string; sub_units: { name: string; location: string }[] }[])
         .map(u => ({ id: u.id, name: u.name, subUnits: Array.isArray(u.sub_units) ? u.sub_units : [] })))
       // 課程的可使用課堂券存商品 id（名稱變動不影響對應）
-      setTicketOptions(((pRes.data ?? []) as { id: string; name: string }[]).map(p => ({ value: p.id, label: p.name })))
+      setTicketOptions(((pRes.data ?? []) as { id: string; name: string; is_single: boolean }[])
+        .map(p => ({ value: p.id, label: p.is_single ? `${p.name}（單堂）` : p.name, isSingle: p.is_single })))
       setLoading(false)
     })
   }, [supabase])
@@ -507,8 +508,20 @@ export default function CoursesPage() {
     }
   }
 
+  // 內部課程必須綁定至少一個「單堂」商品（作為直接報名的計價依據）
+  function validateSingleProduct(): boolean {
+    if (!form.types.includes("內部")) return true
+    const hasSingle = form.ticketTypes.some(id => ticketOptions.find(o => o.value === id)?.isSingle)
+    if (!hasSingle) {
+      alert("內部課程的「可使用課堂券」至少要包含一個單堂型商品（供單堂直接報名計價）。\n請先到課堂券組合建立單堂商品，或在清單中勾選。")
+      return false
+    }
+    return true
+  }
+
   async function saveAdd() {
     if (!form.title.trim() || saving) return
+    if (!validateSingleProduct()) return
     setSaving(true)
     try {
       const row = await buildRow()
@@ -526,6 +539,7 @@ export default function CoursesPage() {
 
   async function saveEdit() {
     if (!editing || saving) return
+    if (!validateSingleProduct()) return
     setSaving(true)
     try {
       const row = await buildRow()
@@ -558,6 +572,25 @@ export default function CoursesPage() {
 
   // ── 點名（course_attendance）──
 
+  // 內部課程：名冊＝綁定該堂的券（由 roster API 合併點名紀錄）；外部課程：手動名冊
+  async function loadRoster(c: Course, date: string): Promise<AttendRecord[] | null> {
+    if (!c.types.includes("內部")) return null
+    const res = await fetch(`/api/attendance/roster?courseId=${c.id}&date=${encodeURIComponent(date)}`)
+    const d = await res.json()
+    if (!res.ok) { alert(`載入名冊失敗：${d.error ?? res.status}`); return null }
+    return (d.records ?? []) as AttendRecord[]
+  }
+
+  async function selectSession(c: Course, list: Session[], idx: number) {
+    setSessionIdx(idx)
+    const s = list[idx]
+    if (!s) return
+    const roster = await loadRoster(c, s.date)
+    if (roster) {
+      setSessions(prev => prev.map((x, i) => i === idx ? { ...x, records: roster } : x))
+    }
+  }
+
   async function openAttend(c: Course) {
     setAttendCourse(c)
     setSessionIdx(0)
@@ -568,21 +601,23 @@ export default function CoursesPage() {
       .eq("course_id", c.id)
       .order("date", { ascending: false })
     if (error) { alert(`載入出席紀錄失敗：${error.message}`); return }
-    setSessions((data ?? []) as Session[])
+    const list = (data ?? []) as Session[]
+    setSessions(list)
+    if (list.length > 0) await selectSession(c, list, 0)
   }
 
   function closeAttend() { setAttendCourse(null); setSessions([]) }
 
-  async function addSession(courseId: string) {
+  async function addSession(c: Course) {
     const today = new Date()
-    const date = `${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, "0")}/${String(today.getDate()).padStart(2, "0")}`
-    const { data, error } = await supabase
-      .from("course_attendance")
-      .insert({ course_id: courseId, date, records: [] })
-      .select("id, date, records")
-      .single()
-    if (error) { alert(`新增課堂失敗：${error.message}`); return }
-    setSessions(prev => [data as Session, ...prev])
+    const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`
+    if (sessions.some(s => s.date.replace(/\//g, "-") === date)) {
+      setSessionIdx(sessions.findIndex(s => s.date.replace(/\//g, "-") === date))
+      return
+    }
+    const roster = (await loadRoster(c, date)) ?? []
+    const next: Session[] = [{ id: null, date, records: roster }, ...sessions]
+    setSessions(next)
     setSessionIdx(0)
   }
 
@@ -598,10 +633,10 @@ export default function CoursesPage() {
     if (!res.ok || !d.ok) alert(`儲存出席狀態失敗：${d.error ?? res.status}`)
   }
 
-  function setStatus(sidx: number, name: string, status: AttendRecord["status"]) {
+  function setStatus(sidx: number, key: string, status: AttendRecord["status"]) {
     setSessions(prev => {
       const next = [...prev]
-      const records = next[sidx].records.map(r => r.name === name ? { ...r, status } : r)
+      const records = next[sidx].records.map(r => (r.ticketId ?? r.name) === key ? { ...r, status } : r)
       next[sidx] = { ...next[sidx], records }
       persistRecords(next[sidx], records)
       return next
@@ -1114,8 +1149,9 @@ export default function CoursesPage() {
       {/* ── 點名 Drawer ── */}
       {attendCourse && (() => {
         const session = sessions[sessionIdx]
+        const isInternalCourse = attendCourse.types.includes("內部")
         const present = session?.records.filter(r => r.status === "出席").length ?? 0
-        const leave = session?.records.filter(r => r.status === "請假").length ?? 0
+        const leave = session?.records.filter(r => r.status === "延期").length ?? 0
         const absent = session?.records.filter(r => r.status === "缺席").length ?? 0
         return (
           <Drawer title="出席紀錄" onClose={closeAttend}>
@@ -1130,19 +1166,19 @@ export default function CoursesPage() {
               {/* Session nav */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <button onClick={() => setSessionIdx(i => Math.min(i + 1, sessions.length - 1))}
+                  <button onClick={() => selectSession(attendCourse, sessions, Math.min(sessionIdx + 1, sessions.length - 1))}
                     disabled={sessionIdx >= sessions.length - 1}
                     className="p-1 rounded-lg hover:bg-[#f5f5f5] disabled:opacity-30 transition-colors">
                     <ChevronLeft size={16} />
                   </button>
                   <p className="text-sm font-medium w-28 text-center">{session?.date ?? "—"}</p>
-                  <button onClick={() => setSessionIdx(i => Math.max(i - 1, 0))}
+                  <button onClick={() => selectSession(attendCourse, sessions, Math.max(sessionIdx - 1, 0))}
                     disabled={sessionIdx <= 0}
                     className="p-1 rounded-lg hover:bg-[#f5f5f5] disabled:opacity-30 transition-colors">
                     <ChevronRight size={16} />
                   </button>
                 </div>
-                <button onClick={() => addSession(attendCourse.id)}
+                <button onClick={() => addSession(attendCourse)}
                   className="flex items-center gap-1 text-xs text-[#999] hover:text-black border border-[#f0f0f0] px-2.5 py-1.5 rounded-lg hover:border-black transition-colors">
                   <Plus size={12} />新增課堂
                 </button>
@@ -1153,7 +1189,7 @@ export default function CoursesPage() {
                 <div className="grid grid-cols-3 gap-2">
                   {[
                     { label: "出席", value: present, color: "text-black" },
-                    { label: "請假", value: leave, color: "text-[#aaa]" },
+                    { label: "延期", value: leave, color: "text-[#aaa]" },
                     { label: "缺席", value: absent, color: "text-red-400" },
                   ].map(({ label, value, color }) => (
                     <div key={label} className="bg-[#fafaf9] border border-[#f0f0f0] rounded-xl py-3 text-center">
@@ -1171,42 +1207,52 @@ export default function CoursesPage() {
                 <div className="flex flex-col gap-2">
                   <p className="text-[11px] text-[#aaa] uppercase tracking-widest">學員名單</p>
                   {session.records.length === 0 && (
-                    <p className="text-sm text-[#ccc]">尚無學員，請在下方新增</p>
+                    <p className="text-sm text-[#ccc]">{isInternalCourse ? "這一堂還沒有人報名" : "尚無學員，請在下方新增"}</p>
                   )}
                   {session.records.map((r) => (
-                    <div key={r.name} className="flex items-center justify-between bg-[#fafaf9] border border-[#f0f0f0] rounded-xl px-4 py-3">
-                      <p className="text-sm font-medium">{r.name}</p>
+                    <div key={r.ticketId ?? r.name} className="flex items-center justify-between bg-[#fafaf9] border border-[#f0f0f0] rounded-xl px-4 py-3">
+                      <div>
+                        <p className="text-sm font-medium">{r.name}</p>
+                        {r.ticketNo && <p className="text-[10px] text-[#bbb] font-mono">{r.ticketNo}</p>}
+                      </div>
                       <div className="flex items-center gap-1.5">
-                        {(["出席", "請假", "缺席"] as const).map(s => (
-                          <button key={s} onClick={() => setStatus(sessionIdx, r.name, s)}
+                        {(["出席", "延期", "缺席"] as const).map(s => (
+                          <button key={s} onClick={() => setStatus(sessionIdx, r.ticketId ?? r.name, s)}
                             className={`text-[11px] px-2 py-1 rounded-lg transition-colors ${r.status === s
                                 ? s === "出席" ? "bg-black text-white"
-                                  : s === "請假" ? "bg-[#f5f5f5] text-[#555]"
+                                  : s === "延期" ? "bg-[#f5f5f5] text-[#555]"
                                     : "bg-red-50 text-red-400"
                                 : "text-[#ccc] hover:text-[#999]"
                               }`}>
                             {s}
                           </button>
                         ))}
-                        <button onClick={() => removeRecord(sessionIdx, r.name)}
-                          className="text-[#e0e0e0] hover:text-red-400 transition-colors ml-1">
-                          <X size={13} />
-                        </button>
+                        {!isInternalCourse && (
+                          <button onClick={() => removeRecord(sessionIdx, r.name)}
+                            className="text-[#e0e0e0] hover:text-red-400 transition-colors ml-1">
+                            <X size={13} />
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}
 
-                  {/* Add student inline */}
-                  <div className="flex gap-2 mt-1">
-                    <input value={newName} onChange={e => setNewName(e.target.value)}
-                      onKeyDown={e => e.key === "Enter" && addRecord(sessionIdx)}
-                      placeholder="新增學員姓名…"
-                      className="flex-1 px-3 py-2 text-sm bg-white border border-[#f0f0f0] rounded-xl outline-none focus:border-black transition-colors" />
-                    <button onClick={() => addRecord(sessionIdx)}
-                      className="px-3 py-2 bg-black text-white text-sm rounded-xl hover:bg-[#222] transition-colors">
-                      <Plus size={14} />
-                    </button>
-                  </div>
+                  {/* Add student inline（外部課程手動名冊） */}
+                  {!isInternalCourse && (
+                    <div className="flex gap-2 mt-1">
+                      <input value={newName} onChange={e => setNewName(e.target.value)}
+                        onKeyDown={e => e.key === "Enter" && addRecord(sessionIdx)}
+                        placeholder="新增學員姓名…"
+                        className="flex-1 px-3 py-2 text-sm bg-white border border-[#f0f0f0] rounded-xl outline-none focus:border-black transition-colors" />
+                      <button onClick={() => addRecord(sessionIdx)}
+                        className="px-3 py-2 bg-black text-white text-sm rounded-xl hover:bg-[#222] transition-colors">
+                        <Plus size={14} />
+                      </button>
+                    </div>
+                  )}
+                  {isInternalCourse && (
+                    <p className="text-[10px] text-[#bbb]">出席／缺席會核銷課堂券；「延期」券退回學員可重新預約</p>
+                  )}
                 </div>
               )}
             </div>

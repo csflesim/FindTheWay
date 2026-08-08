@@ -10,15 +10,16 @@ import {
 } from "../_lib/orders"
 
 type FlatTicket = { ticket: Ticket; order: Order }
-type FilterStatus = "全部" | "未使用" | "已使用" | "已失效" | "已轉讓"
+type FilterStatus = "全部" | "未使用" | "已預約" | "已使用" | "已失效" | "已轉讓"
 
-const statusFilters: FilterStatus[] = ["全部", "未使用", "已使用", "已失效", "已轉讓"]
+const statusFilters: FilterStatus[] = ["全部", "未使用", "已預約", "已使用", "已失效", "已轉讓"]
 
 function matchStatus(t: Ticket, f: FilterStatus): boolean {
   if (f === "全部")   return true
   if (f === "已失效") return t.status === "已失效"
   if (f === "已轉讓") return !!t.transferredTo && t.status !== "已失效"
   if (f === "已使用") return t.status === "已使用" && !t.transferredTo
+  if (f === "已預約") return t.status === "待使用"
   if (f === "未使用") return t.status === "未使用"
   return true
 }
@@ -33,22 +34,133 @@ function expiryStyle(expiresAt?: string): string {
   return "text-[#555]"
 }
 
+function fmtEventTime(iso: string): string {
+  const d = new Date(iso)
+  return d.toLocaleString("zh-TW", { timeZone: "Asia/Taipei", hour12: false,
+    month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })
+}
+
+function TicketDrawer({ ticket, order, onClose, onChanged }: {
+  ticket: Ticket; order: Order; onClose: () => void; onChanged: () => void
+}) {
+  const [extendDate, setExtendDate] = useState("")
+  const [busy, setBusy] = useState(false)
+
+  async function act(action: "extend" | "restore") {
+    if (busy) return
+    if (action === "extend" && !extendDate) { alert("請先選擇新效期"); return }
+    if (action === "restore" && !confirm(`確定要把 ${ticket.no} 退回「未使用」？\n若原本已預約課程，綁定會一併解除。`)) return
+    setBusy(true)
+    const res = await fetch("/api/admin/ticket-action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ticketId: ticket.id, action, expiresAt: extendDate || undefined }),
+    })
+    const d = await res.json()
+    setBusy(false)
+    if (!res.ok || !d.ok) { alert(`操作失敗：${d.error ?? res.status}`); return }
+    onChanged()
+    onClose()
+  }
+
+  const events = ticket.history.length > 0
+    ? ticket.history
+    : [{ at: order.createdAt, event: "發券", note: `訂單 ${order.orderNo}` }]
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <aside className="relative w-full max-w-md bg-white h-full flex flex-col shadow-2xl">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-[#f0f0f0] shrink-0">
+          <div>
+            <h2 className="text-base font-medium font-mono">{ticket.no}</h2>
+            <p className="text-xs text-[#999] mt-0.5">{order.item} · {order.student}</p>
+          </div>
+          <span className={`text-[10px] px-2 py-0.5 rounded-full ${ticketLabelStyle(ticket)}`}>{ticketLabel(ticket)}</span>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-5 flex flex-col gap-5">
+          {/* 基本資訊 */}
+          <div className="bg-[#fafaf9] rounded-xl p-4 flex flex-col gap-2 text-sm">
+            <div className="flex justify-between"><span className="text-[#999] text-xs">所屬訂單</span><span className="font-mono text-xs">{order.orderNo}</span></div>
+            <div className="flex justify-between"><span className="text-[#999] text-xs">有效期限</span><span className="text-xs">{ticket.expiresAt ?? "—"}</span></div>
+            {ticket.courseTitle && (
+              <div className="flex justify-between"><span className="text-[#999] text-xs">綁定課程</span><span className="text-xs">{ticket.courseTitle}（{ticket.sessionDate}）</span></div>
+            )}
+            {ticket.transferredTo && (
+              <div className="flex justify-between"><span className="text-[#999] text-xs">轉讓給</span><span className="text-xs">{ticket.transferredTo}</span></div>
+            )}
+          </div>
+
+          {/* 歷程 */}
+          <div>
+            <p className="text-[11px] text-[#aaa] uppercase tracking-widest mb-3">歷程</p>
+            <div className="flex flex-col">
+              {events.map((e, i) => (
+                <div key={i} className="flex gap-3">
+                  <div className="flex flex-col items-center">
+                    <div className={`w-2 h-2 rounded-full mt-1.5 ${i === events.length - 1 ? "bg-black" : "bg-[#ddd]"}`} />
+                    {i < events.length - 1 && <div className="w-px flex-1 bg-[#eee]" />}
+                  </div>
+                  <div className="pb-4">
+                    <p className="text-sm">{e.event}</p>
+                    <p className="text-[11px] text-[#aaa] mt-0.5">{fmtEventTime(e.at)}{e.note ? ` · ${e.note}` : ""}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 人工操作 */}
+          <div className="border-t border-[#f5f5f5] pt-4 flex flex-col gap-3">
+            <p className="text-[11px] text-[#aaa] uppercase tracking-widest">人工操作</p>
+            <div className="flex gap-2">
+              <input type="date" value={extendDate} onChange={e => setExtendDate(e.target.value)}
+                className="flex-1 px-3 py-2 text-sm bg-[#fafaf9] border border-[#f0f0f0] rounded-xl outline-none focus:border-black transition-colors" />
+              <button onClick={() => act("extend")} disabled={busy}
+                className="px-4 py-2 text-sm border border-[#e8e8e8] rounded-xl text-[#333] hover:border-black disabled:opacity-40 transition-colors whitespace-nowrap">
+                延期至此
+              </button>
+            </div>
+            {(ticket.status === "已使用" || ticket.status === "待使用") && (
+              <button onClick={() => act("restore")} disabled={busy}
+                className="w-full py-2.5 text-sm border border-[#e8e8e8] rounded-xl text-[#333] hover:border-black disabled:opacity-40 transition-colors">
+                退回未使用{ticket.status === "已使用" ? "（撤銷核銷）" : "（解除預約）"}
+              </button>
+            )}
+            <p className="text-[10px] text-[#bbb] leading-relaxed">
+              延期：過期棄權的券可用新效期救回。退回未使用：缺席核銷後想放人補課、或代會員解除預約時使用，所有操作都會記入歷程。
+            </p>
+          </div>
+        </div>
+
+        <div className="px-6 py-4 border-t border-[#f0f0f0] shrink-0">
+          <button onClick={onClose} className="w-full py-2.5 text-sm bg-black text-white rounded-xl hover:bg-[#222] transition-colors">關閉</button>
+        </div>
+      </aside>
+    </div>
+  )
+}
+
 export default function VouchersPage() {
   const supabase = useMemo(() => createClient(), [])
   const [orders, setOrders]           = useState<Order[]>([])
   const [query, setQuery]             = useState("")
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("全部")
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
+  const [selectedTicket, setSelectedTicket] = useState<FlatTicket | null>(null)
   const [ready, setReady]             = useState(false)
 
-  useEffect(() => {
+  function reload() {
     supabase.from("orders").select(ORDER_SELECT).order("created_at", { ascending: false })
       .then(({ data, error }) => {
         if (error) console.error("載入卡券失敗:", error.message)
         else setOrders((data as unknown as OrderRow[]).map(orderFromRow))
         setReady(true)
       })
-  }, [supabase])
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { reload() }, [supabase])
 
   const allTickets = useMemo<FlatTicket[]>(() =>
     orders.flatMap(o => o.tickets.map(ticket => ({ ticket, order: o }))),
@@ -72,6 +184,7 @@ export default function VouchersPage() {
     total:    allTickets.length,
     used:     allTickets.filter(({ ticket: t }) => t.status === "已使用" && !t.transferredTo).length,
     unused:   allTickets.filter(({ ticket: t }) => !ticketConsumed(t)).length,
+    booked:   allTickets.filter(({ ticket: t }) => t.status === "待使用").length,
     voided:   allTickets.filter(({ ticket: t }) => t.status === "已失效").length,
     transfer: allTickets.filter(({ ticket: t }) => !!t.transferredTo && t.status !== "已失效").length,
   }), [allTickets])
@@ -87,11 +200,12 @@ export default function VouchersPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-3 mb-5">
+      <div className="grid grid-cols-4 gap-3 mb-5">
         {[
           { label: "總張數", value: counts.total },
+          { label: "已預約", value: counts.booked },
           { label: "已使用", value: counts.used  },
-          { label: "未使用", value: counts.unused },
+          { label: "未使用", value: counts.unused - counts.booked },
         ].map(({ label, value }) => (
           <div key={label} className="bg-white rounded-xl p-4 border border-[#f0f0f0] text-center">
             <p className="text-xl font-medium leading-none">{value}</p>
@@ -137,7 +251,10 @@ export default function VouchersPage() {
           {filtered.length === 0 && <p className="px-5 py-6 text-sm text-[#ccc]">查無課堂券</p>}
           {filtered.map(({ ticket: t, order: o }) => (
             <div key={t.no} className="grid grid-cols-[1.3fr_0.8fr_0.9fr_1.1fr_0.9fr_0.9fr_0.9fr] gap-3 items-center px-5 py-3.5">
-              <p className="text-xs font-mono text-[#555]">{t.no}</p>
+              <button
+                onClick={() => setSelectedTicket({ ticket: t, order: o })}
+                className="text-xs font-mono text-[#555] underline underline-offset-2 decoration-[#e0e0e0] hover:text-black hover:decoration-black transition-colors text-left"
+              >{t.no}</button>
               <p className="text-sm">{o.student}</p>
               <button
                 onClick={() => setSelectedOrder(o)}
@@ -161,7 +278,8 @@ export default function VouchersPage() {
           <div key={t.no} className="bg-white rounded-xl p-4 border border-[#f0f0f0]">
             <div className="flex items-start justify-between gap-2 mb-2">
               <div>
-                <p className="text-xs font-mono text-[#555]">{t.no}</p>
+                <button onClick={() => setSelectedTicket({ ticket: t, order: o })}
+                  className="text-xs font-mono text-[#555] underline underline-offset-2 decoration-[#e0e0e0]">{t.no}</button>
                 <p className="text-sm mt-0.5">{o.item}</p>
               </div>
               <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 whitespace-nowrap ${ticketLabelStyle(t)}`}>
@@ -188,6 +306,14 @@ export default function VouchersPage() {
 
       {selectedOrder && (
         <OrderDetail order={selectedOrder} onClose={() => setSelectedOrder(null)} />
+      )}
+      {selectedTicket && (
+        <TicketDrawer
+          ticket={selectedTicket.ticket}
+          order={selectedTicket.order}
+          onClose={() => setSelectedTicket(null)}
+          onChanged={reload}
+        />
       )}
     </div>
   )

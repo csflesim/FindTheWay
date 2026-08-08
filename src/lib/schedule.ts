@@ -58,6 +58,49 @@ export function mergeMonthEvents(
   return out
 }
 
+export type UpcomingSession = { date: string; time: string }  // date: "YYYY-MM-DD"
+
+/**
+ * 列出班表接下來的場次（含今天），供報名選日期用。
+ * 週期課展開最近 count 堂；單堂課回傳那一天（未過期才回）。
+ */
+export function upcomingSessions(schedule: string, count = 8, from = new Date()): UpcomingSession[] {
+  const out: UpcomingSession[] = []
+  const start = new Date(from.getFullYear(), from.getMonth(), from.getDate())
+
+  const weekly = schedule.match(/每週([日一二三四五六、]+) (\d{2}:\d{2})–(\d{2}:\d{2})/)
+  if (weekly) {
+    const wds = new Set(
+      weekly[1].split("、").map(c => WEEKDAY_INDEX[c]).filter(n => n !== undefined),
+    )
+    if (wds.size === 0) return out
+    const time = `${weekly[2]}–${weekly[3]}`
+    const d = new Date(start)
+    while (out.length < count) {
+      if (wds.has(d.getDay())) {
+        out.push({ date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, time })
+      }
+      d.setDate(d.getDate() + 1)
+    }
+    return out
+  }
+
+  const single = schedule.match(/(\d{4})\/(\d{2})\/(\d{2}) (\d{2}:\d{2})–(\d{2}:\d{2})/)
+  if (single) {
+    const [, y, m, dd, s, e] = single
+    const date = `${y}-${m}-${dd}`
+    if (new Date(`${date}T23:59:59`) >= start) out.push({ date, time: `${s}–${e}` })
+  }
+  return out
+}
+
+/** 取得班表在某日期的上課開始時間（台灣時間），供取消期限計算 */
+export function sessionStartAt(schedule: string, date: string): Date | null {
+  const m = schedule.match(/(\d{2}:\d{2})–\d{2}:\d{2}/)
+  if (!m) return null
+  return new Date(`${date}T${m[1]}:00+08:00`)
+}
+
 /** 計算某課程班表在指定月份的堂數 */
 export function countMonthOccurrences(schedule: string, year: number, month0: number): number {
   const m = expandScheduleToMonth(schedule, "", "", year, month0)

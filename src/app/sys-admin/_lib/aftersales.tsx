@@ -11,8 +11,9 @@ function todayTS(): string {
   return `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
 }
 
+// 只有「未使用」能收回；「待使用」（已預約課程）須先取消上課解除綁定
 function unusedOf(order: Order): Ticket[] {
-  return order.tickets.filter(t => !ticketConsumed(t))
+  return order.tickets.filter(t => t.status === "未使用")
 }
 
 function consumedOf(order: Order): Ticket[] {
@@ -55,7 +56,7 @@ export function AfterSalesPanel({
     setSaving(true)
     const now = todayTS()
     const reclaimedIds = order.tickets
-      .filter(t => selectedNos.has(t.no) && !ticketConsumed(t))
+      .filter(t => selectedNos.has(t.no) && t.status === "未使用")
       .map(t => t.id)
     const afterSales: AfterSalesRecord = {
       refundAmount,
@@ -80,7 +81,7 @@ export function AfterSalesPanel({
     if (oErr) { setSaving(false); alert(`更新訂單失敗：${oErr.message}`); return }
 
     const updatedTickets: Ticket[] = order.tickets.map(t =>
-      selectedNos.has(t.no) && !ticketConsumed(t)
+      selectedNos.has(t.no) && t.status === "未使用"
         ? { ...t, status: "已失效" as const }
         : t
     )

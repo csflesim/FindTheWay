@@ -5,7 +5,9 @@ import { X } from "lucide-react"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 export type PayStatus = "已付款" | "待確認" | "已退款" | "已取消" | "已售後"
-export type TicketStatus = "未使用" | "已使用" | "已失效"
+export type TicketStatus = "未使用" | "待使用" | "已使用" | "已失效"
+
+export type TicketEvent = { at: string; event: string; note?: string }
 
 export type Ticket = {
   id: string
@@ -14,6 +16,9 @@ export type Ticket = {
   expiresAt?: string      // "YYYY/MM/DD"
   usedAt?: string         // "MM/DD HH:mm"
   transferredTo?: string  // 受讓學員姓名
+  courseTitle?: string    // 待使用時綁定的課程
+  sessionDate?: string    // "YYYY/MM/DD"
+  history: TicketEvent[]
 }
 
 export type AfterSalesRecord = {
@@ -57,7 +62,7 @@ export const PAY_METHODS = ["銀行轉帳", "現金", "Line Pay", "信用卡"]
 
 // 訂單完整查詢：會員、學員、商品、票券（含受讓人）一次 JOIN 帶齊
 export const ORDER_SELECT =
-  "*, member:profiles!member_id(name), student:students!student_id(name), product:products!product_id(transferable), tickets(*, transferee:students!transferred_to(name))"
+  "*, member:profiles!member_id(name), student:students!student_id(name), product:products!product_id(transferable), tickets(*, transferee:students!transferred_to(name), course:courses(title))"
 
 type TicketRow = {
   id: string
@@ -65,7 +70,10 @@ type TicketRow = {
   status: TicketStatus
   expires_at: string | null
   used_at: string | null
+  session_date: string | null
+  history: TicketEvent[] | null
   transferee: { name: string } | null
+  course: { title: string } | null
 }
 
 export type OrderRow = {
@@ -131,6 +139,9 @@ export function orderFromRow(r: OrderRow): Order {
         expiresAt: t.expires_at ? t.expires_at.replace(/-/g, "/") : undefined,
         usedAt: t.used_at ? fmtDateTime(t.used_at) : undefined,
         transferredTo: t.transferee?.name ?? undefined,
+        courseTitle: t.course?.title ?? undefined,
+        sessionDate: t.session_date ? t.session_date.replace(/-/g, "/") : undefined,
+        history: t.history ?? [],
       })),
   }
 }
@@ -154,6 +165,7 @@ export async function issueTickets(
     student_id: order.studentId,
     status: "未使用" as TicketStatus,
     expires_at: expiresAt,
+    history: [{ at: new Date().toISOString(), event: "發券", note: `訂單 ${order.orderNo}` }],
   }))
   const { error } = await supabase.from("tickets").insert(rows)
   return error ? error.message : null
@@ -172,9 +184,9 @@ export function useStatusStyle(status: string): string {
   return "bg-[#f5f5f5] text-[#999]"
 }
 
-/** 票券已消耗（不可再使用）：已使用或已失效 */
+/** 票券已消耗（不可再使用）：已使用或已失效；待使用＝已預約仍屬持有中 */
 export function ticketConsumed(t: Ticket): boolean {
-  return t.status !== "未使用"
+  return t.status === "已使用" || t.status === "已失效"
 }
 
 export function getUseStatus(order: Order): string | null {
@@ -184,6 +196,7 @@ export function getUseStatus(order: Order): string | null {
 
 export function ticketLabel(t: Ticket): string {
   if (t.status === "已失效") return "已失效"
+  if (t.status === "待使用") return "已預約"
   if (t.transferredTo) {
     return t.status === "已使用" ? `已使用(${t.transferredTo})` : `已轉讓(${t.transferredTo})`
   }
@@ -193,6 +206,7 @@ export function ticketLabel(t: Ticket): string {
 export function ticketLabelStyle(t: Ticket): string {
   if (t.status === "已失效") return "bg-[#fee2e2] text-[#991b1b]"
   if (t.status === "已使用") return "bg-black text-white"
+  if (t.status === "待使用") return "bg-[#e8f5e9] text-[#2e7d32]"
   if (t.transferredTo) return "bg-[#fff3e0] text-[#e65100]"
   return "bg-[#f5f5f5] text-[#aaa]"
 }

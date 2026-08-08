@@ -8,21 +8,78 @@ import {
   ORDER_SELECT, orderFromRow, payStatusStyle,
 } from "@/app/sys-admin/_lib/orders"
 
+type Booking = {
+  ticketId: string
+  ticketNo: string
+  courseTitle: string
+  date: string          // "YYYY-MM-DD"
+  time: string
+  status: string        // 待使用 / 已使用
+  holder: string
+}
+
+function fmtBookingDate(d: string) {
+  const [, m, dd] = d.split("-")
+  const wd = "日一二三四五六"[new Date(`${d}T12:00:00`).getDay()]
+  return `${m}/${dd}（${wd}）`
+}
+
 export default function OrdersPage() {
   const supabase = useMemo(() => createClient(), [])
   const [orders, setOrders] = useState<Order[]>([])
+  const [bookings, setBookings] = useState<Booking[]>([])
   const [loading, setLoading] = useState(true)
   const [cancelTarget, setCancelTarget] = useState<Order | null>(null)
+  const [bookingCancel, setBookingCancel] = useState<Booking | null>(null)
+  const [cancelling, setCancelling] = useState(false)
 
   useEffect(() => {
-    // RLS 已限定只回傳自己的訂單
-    supabase.from("orders").select(ORDER_SELECT).order("created_at", { ascending: false })
-      .then(({ data, error }) => {
-        if (error) console.error("載入訂單失敗:", error.message)
-        else setOrders((data as unknown as OrderRow[]).map(orderFromRow))
-        setLoading(false)
-      })
+    // RLS 已限定只回傳自己的訂單／票券
+    Promise.all([
+      supabase.from("orders").select(ORDER_SELECT).order("created_at", { ascending: false }),
+      supabase.from("tickets")
+        .select("id, ticket_no, status, session_date, course:courses(title, schedule), student:students!student_id(name), transferee:students!transferred_to(name)")
+        .not("course_id", "is", null)
+        .in("status", ["待使用", "已使用"])
+        .order("session_date", { ascending: false }),
+    ]).then(([oRes, tRes]) => {
+      if (oRes.error) console.error("載入訂單失敗:", oRes.error.message)
+      else setOrders((oRes.data as unknown as OrderRow[]).map(orderFromRow))
+      if (tRes.error) console.error("載入報名失敗:", tRes.error.message)
+      else {
+        setBookings(((tRes.data ?? []) as unknown as {
+          id: string; ticket_no: string; status: string; session_date: string | null
+          course: { title: string; schedule: string } | null
+          student: { name: string } | null
+          transferee: { name: string } | null
+        }[]).filter(t => t.session_date && t.course).map(t => ({
+          ticketId: t.id,
+          ticketNo: t.ticket_no,
+          courseTitle: t.course!.title,
+          date: t.session_date!,
+          time: t.course!.schedule.match(/\d{2}:\d{2}–\d{2}:\d{2}/)?.[0] ?? "",
+          status: t.status,
+          holder: t.transferee?.name ?? t.student?.name ?? "本人",
+        })))
+      }
+      setLoading(false)
+    })
   }, [supabase])
+
+  async function confirmBookingCancel() {
+    if (!bookingCancel || cancelling) return
+    setCancelling(true)
+    const res = await fetch("/api/member/cancel-booking", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ticketId: bookingCancel.ticketId }),
+    })
+    const d = await res.json()
+    setCancelling(false)
+    if (!res.ok || !d.ok) { alert(`取消失敗：${d.error ?? res.status}`); return }
+    setBookings(prev => prev.filter(b => b.ticketId !== bookingCancel.ticketId))
+    setBookingCancel(null)
+  }
 
   // 課堂券餘額：已付款且有票券的訂單
   const ticketBalances = orders
@@ -38,8 +95,6 @@ export default function OrdersPage() {
     }))
     .filter(t => t.remaining > 0)
 
-  // 報名紀錄：單堂課程訂單
-  const enrollments = orders.filter(o => o.courseId)
 
   async function confirmCancel() {
     if (!cancelTarget) return
@@ -96,22 +151,35 @@ export default function OrdersPage() {
         </div>
       )}
 
-      {/* 報名紀錄 */}
-      {!loading && enrollments.length > 0 && (
+      {/* 報名紀錄（券綁定） */}
+      {!loading && bookings.length > 0 && (
         <div className="px-4 mt-6">
           <p className="text-[10px] text-[#aaa] uppercase tracking-widest mb-3">報名紀錄</p>
           <div className="bg-white rounded-xl divide-y divide-[#f5f5f5] border border-[#f0f0f0]">
-            {enrollments.map((r) => (
-              <div key={r.id} className="flex items-center justify-between px-4 py-3.5">
+            {bookings.map((b) => (
+              <div key={b.ticketId} className="flex items-center justify-between px-4 py-3.5">
                 <div>
-                  <p className="text-sm font-medium">{r.item}</p>
-                  <p className="text-xs text-[#999] mt-0.5">{r.date} · {r.student}</p>
+                  <p className="text-sm font-medium">{b.courseTitle}</p>
+                  <p className="text-xs text-[#999] mt-0.5">
+                    {fmtBookingDate(b.date)} {b.time} · {b.holder}
+                  </p>
+                  <p className="text-[10px] text-[#bbb] font-mono mt-0.5">{b.ticketNo}</p>
                 </div>
-                <span className={`text-[11px] px-2.5 py-1 rounded-full ${
-                  r.payStatus === "已付款" ? "bg-black text-white" : payStatusStyle[r.payStatus]
-                }`}>
-                  {r.payStatus === "已付款" ? "已報名" : r.payStatus}
-                </span>
+                <div className="flex flex-col items-end gap-1.5 shrink-0">
+                  <span className={`text-[11px] px-2.5 py-1 rounded-full ${
+                    b.status === "待使用" ? "bg-black text-white" : "bg-[#f5f5f5] text-[#999]"
+                  }`}>
+                    {b.status === "待使用" ? "已預約" : "已上課"}
+                  </span>
+                  {b.status === "待使用" && (
+                    <button
+                      onClick={() => setBookingCancel(b)}
+                      className="text-[10px] text-red-400 hover:text-red-600 transition-colors"
+                    >
+                      取消上課
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -155,6 +223,42 @@ export default function OrdersPage() {
       )}
 
       <div className="h-6" />
+
+      {/* ── 取消上課 Confirm Modal ── */}
+      {bookingCancel && (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setBookingCancel(null)} />
+          <div className="relative w-full max-w-md bg-white rounded-t-3xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-medium">取消上課</h2>
+              <button onClick={() => setBookingCancel(null)} className="text-[#bbb] hover:text-black transition-colors">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="bg-[#fafaf9] rounded-xl p-4 mb-4">
+              <p className="text-sm font-medium">{bookingCancel.courseTitle}</p>
+              <p className="text-xs text-[#aaa] mt-0.5">
+                {fmtBookingDate(bookingCancel.date)} {bookingCancel.time} · {bookingCancel.holder}
+              </p>
+            </div>
+            <p className="text-xs text-[#999] leading-relaxed mb-5">
+              取消後課堂券將退回，可重新預約其他日期或課程。
+              超過課程設定的取消期限將無法取消。
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setBookingCancel(null)}
+                className="flex-1 py-3 text-sm border border-[#e8e8e8] rounded-xl text-[#666] hover:border-[#ccc] transition-colors">
+                保留預約
+              </button>
+              <button onClick={confirmBookingCancel} disabled={cancelling}
+                className="flex-1 py-3 text-sm bg-red-500 text-white rounded-xl hover:bg-red-600 disabled:opacity-50 transition-colors font-medium">
+                {cancelling ? "取消中…" : "確認取消"}
+              </button>
+            </div>
+            <div className="h-6" />
+          </div>
+        </div>
+      )}
 
       {/* ── Cancel Confirm Modal ── */}
       {cancelTarget && (

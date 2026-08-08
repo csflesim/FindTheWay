@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from "next/server"
 import { requireStaff } from "@/lib/admin-guard"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { fireWorkflows, syncCourseEnrollment } from "@/lib/workflow-engine"
+import { withEvent } from "@/lib/ticket-history"
 
 // 確認付款（後台）：
-// 1. 課堂券扣抵訂單 → 自動把來源券包的一張未使用票券標記「已使用」
-// 2. 券包訂單 → 依商品效期發券
-// 3. 課程訂單 → 同步課程已報名人數
-// 4. 觸發工作流事件（付款成功 / 報名確認）
+// 1. 依商品發券（券包 = 未使用；單堂直購 = 發券後立即綁定課程日期 → 待使用）
+// 2. 直購綁定前檢查各堂名額，額滿則擋下確認
+// 3. 同步課程已報名數、觸發工作流事件（付款成功 / 報名確認）
 
 function pad(n: number) { return String(n).padStart(2, "0") }
 
@@ -19,35 +19,31 @@ export async function POST(req: NextRequest) {
   const admin = createAdminClient()
   const { data: order } = await admin
     .from("orders")
-    .select("id, order_no, status, qty, notes, course_id, product_id, student_id, tickets(id)")
+    .select("id, order_no, status, qty, notes, course_id, product_id, student_id, booking_dates, tickets(id)")
     .eq("id", orderId)
     .maybeSingle()
   if (!order) return NextResponse.json({ error: "找不到訂單" }, { status: 404 })
   if (order.status !== "待確認") return NextResponse.json({ error: "此訂單不是待確認狀態" }, { status: 400 })
 
-  // ── 課堂券扣抵：核銷來源券包的一張票 ──
-  const deductMatch = (order.notes ?? "").match(/課堂券扣抵（(ORD-\d+)）/)
-  if (deductMatch) {
-    const { data: source } = await admin
-      .from("orders")
-      .select("id, student_id, tickets(id, status, transferred_to, student_id, expires_at)")
-      .eq("order_no", deductMatch[1])
-      .maybeSingle()
-    const candidates = ((source?.tickets ?? []) as {
-      id: string; status: string; transferred_to: string | null; student_id: string | null; expires_at: string | null
-    }[])
-      .filter(t => t.status === "未使用" && !t.transferred_to)
-      .sort((a, b) => (a.expires_at ?? "9999").localeCompare(b.expires_at ?? "9999"))
-    if (candidates.length === 0) {
-      return NextResponse.json({ error: `來源券包 ${deductMatch[1]} 已無可用票券，無法扣抵` }, { status: 400 })
+  const bookingDates = (Array.isArray(order.booking_dates) ? order.booking_dates : []) as string[]
+
+  // ── 直購綁定前：各堂名額檢查 ──
+  if (order.course_id && bookingDates.length > 0) {
+    const { data: course } = await admin
+      .from("courses").select("capacity").eq("id", order.course_id).maybeSingle()
+    const perDate = new Map<string, number>()
+    for (const d of bookingDates) perDate.set(d, (perDate.get(d) ?? 0) + 1)
+    for (const [d, cnt] of perDate) {
+      const { count } = await admin
+        .from("tickets")
+        .select("id", { count: "exact", head: true })
+        .eq("course_id", order.course_id)
+        .eq("session_date", d)
+        .in("status", ["待使用", "已使用"])
+      if ((count ?? 0) + cnt > (course?.capacity ?? 0)) {
+        return NextResponse.json({ error: `${d.replace(/-/g, "/")} 名額已滿，無法確認此報名，請與會員協調改期` }, { status: 400 })
+      }
     }
-    // 優先扣持有人與本單學員相同的票
-    const preferred = candidates.find(t => t.student_id === order.student_id) ?? candidates[0]
-    const { error: tErr } = await admin
-      .from("tickets")
-      .update({ status: "已使用", used_at: new Date().toISOString() })
-      .eq("id", preferred.id)
-    if (tErr) return NextResponse.json({ error: `核銷票券失敗：${tErr.message}` }, { status: 500 })
   }
 
   // ── 訂單標記已付款 ──
@@ -57,13 +53,14 @@ export async function POST(req: NextRequest) {
     .eq("id", orderId)
   if (oErr) return NextResponse.json({ error: oErr.message }, { status: 500 })
 
-  // ── 券包訂單：發券 ──
+  // ── 發券（含單堂直購自動綁定）──
   if (order.product_id && (order.tickets ?? []).length === 0) {
-    const { data: product } = await admin
-      .from("products")
-      .select("validity_months")
-      .eq("id", order.product_id)
-      .maybeSingle()
+    const [{ data: product }, { data: course }] = await Promise.all([
+      admin.from("products").select("validity_months, name").eq("id", order.product_id).maybeSingle(),
+      order.course_id
+        ? admin.from("courses").select("title").eq("id", order.course_id).maybeSingle()
+        : Promise.resolve({ data: null }),
+    ])
     let expiresAt: string | null = null
     if (product?.validity_months) {
       const d = new Date()
@@ -71,13 +68,24 @@ export async function POST(req: NextRequest) {
       expiresAt = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
     }
     const num = order.order_no.replace("ORD-", "")
-    const rows = Array.from({ length: order.qty }, (_, i) => ({
-      ticket_no: `TK-${num}-${pad(i + 1)}`,
-      order_id: order.id,
-      student_id: order.student_id,
-      status: "未使用",
-      expires_at: expiresAt,
-    }))
+    const rows = Array.from({ length: order.qty }, (_, i) => {
+      const bindDate = bookingDates[i] ?? null
+      const bound = !!(order.course_id && bindDate)
+      let history = withEvent([], "發券", `訂單 ${order.order_no}`)
+      if (bound) {
+        history = withEvent(history, "報名", `${(course as { title?: string } | null)?.title ?? ""} ${bindDate!.replace(/-/g, "/")}`.trim())
+      }
+      return {
+        ticket_no: `TK-${num}-${pad(i + 1)}`,
+        order_id: order.id,
+        student_id: order.student_id,
+        status: bound ? "待使用" : "未使用",
+        course_id: bound ? order.course_id : null,
+        session_date: bindDate,
+        expires_at: expiresAt,
+        history,
+      }
+    })
     const { error: insErr } = await admin.from("tickets").insert(rows)
     if (insErr) return NextResponse.json({ error: `發券失敗：${insErr.message}` }, { status: 500 })
   }

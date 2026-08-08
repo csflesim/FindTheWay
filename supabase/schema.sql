@@ -215,6 +215,7 @@ create table public.products (
   id              uuid primary key default gen_random_uuid(),
   name            text not null,
   sessions        int not null,                 -- 堂數
+  is_single       boolean not null default false, -- 單堂型別（堂數固定 1，可作課程直購載體）
   price           int not null,
   validity_months int not null default 12,
   cancel_hours    int not null default 24,      -- 課前取消時限
@@ -242,6 +243,7 @@ create table public.orders (
               check (status in ('待確認', '已付款', '已取消', '已退款', '已售後')),
   pay_method  text,
   notes       text,
+  booking_dates jsonb, -- 單堂直購預選的上課日期 ["YYYY-MM-DD", ...]，確認付款後發券並綁定
   after_sales jsonb,   -- { refundAmount, reclaimedTicketNos: [], reason, processedAt }
   created_at  timestamptz not null default now(),
   paid_at     timestamptz
@@ -254,12 +256,16 @@ create table public.tickets (
   order_id       uuid not null references public.orders(id) on delete cascade,
   student_id     uuid references public.students(id) on delete set null,  -- 目前持有人
   status         text not null default '未使用'
-                 check (status in ('未使用', '已使用', '已失效')),
+                 check (status in ('未使用', '待使用', '已使用', '已失效')),
   expires_at     date,
   used_at        timestamptz,
   transferred_to uuid references public.students(id) on delete set null,
+  course_id      uuid references public.courses(id) on delete set null,  -- 待使用時綁定的課程
+  session_date   date,                                                   -- 待使用時綁定的上課日期
+  history        jsonb not null default '[]',                            -- 歷程事件 [{at,event,...}]
   created_at     timestamptz not null default now()
 );
+create index if not exists tickets_course_session_idx on public.tickets (course_id, session_date);
 create index tickets_order_idx   on public.tickets(order_id);
 create index tickets_student_idx on public.tickets(student_id);
 

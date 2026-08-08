@@ -79,14 +79,17 @@ async function logSend(channel: "line" | "email", recipient: string, body: strin
 }
 
 /** 依訂單狀態異動同步課程已報名人數（enrolled = 該課程已付款/已售後訂單數） */
+// 課程「已報名」＝未來場次（含今天）仍綁定中的券數；各堂人數由詳情/名冊頁即時計算
 export async function syncCourseEnrollment(courseId: string | null | undefined) {
   if (!courseId) return
   const admin = createAdminClient()
+  const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Taipei" }).format(new Date())
   const { count } = await admin
-    .from("orders")
+    .from("tickets")
     .select("id", { count: "exact", head: true })
     .eq("course_id", courseId)
-    .in("status", ["已付款", "已售後"])
+    .eq("status", "待使用")
+    .gte("session_date", today)
   await admin.from("courses").update({ enrolled: count ?? 0 }).eq("id", courseId)
 }
 

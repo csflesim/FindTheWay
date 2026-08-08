@@ -11,9 +11,11 @@ type RollStudent = {
   name: string
   present: boolean
   absentType: AbsentType
+  ticketId?: string
+  ticketNo?: string
 }
 
-type AttRecord = { name: string; status: string }
+type AttRecord = { name: string; status: string; ticketId?: string; ticketNo?: string }
 
 const DAYS = ["日", "一", "二", "三", "四", "五", "六"]
 
@@ -28,9 +30,10 @@ function toStatus(s: RollStudent): string {
 }
 
 function fromStatus(r: AttRecord): RollStudent {
-  if (r.status === "出席") return { name: r.name, present: true, absentType: null }
-  if (r.status === "延期") return { name: r.name, present: false, absentType: "defer" }
-  return { name: r.name, present: false, absentType: "no_defer" }
+  const base = { name: r.name, ticketId: r.ticketId, ticketNo: r.ticketNo }
+  if (r.status === "出席") return { ...base, present: true, absentType: null }
+  if (r.status === "延期") return { ...base, present: false, absentType: "defer" }
+  return { ...base, present: false, absentType: "no_defer" }
 }
 
 export default function AttendancePage() {
@@ -61,31 +64,18 @@ export default function AttendancePage() {
 
   const occ = occs.find(o => o.id === selectedOcc) ?? null
 
-  // 載入名單：既有點名紀錄優先，否則由該課程的已付款報名訂單建立
+  // 載入名冊：內部課程＝綁定該堂的券（伺服器端合併既有點名紀錄）；外部課程＝既有紀錄＋手動增減
+  const [internal, setInternal] = useState(true)
   useEffect(() => {
     if (!occ) return
     setSaved(false); setRowId(null); setStudents([])
     ;(async () => {
-      const { data: existing } = await supabase
-        .from("course_attendance")
-        .select("id, records")
-        .eq("course_id", occ.courseId)
-        .eq("date", attDate(occ.dateStr))
-        .maybeSingle()
-      if (existing) {
-        setRowId(existing.id)
-        setStudents(((existing.records ?? []) as AttRecord[]).map(fromStatus))
-        return
-      }
-      const { data: orders } = await supabase
-        .from("orders")
-        .select("status, student:students!student_id(name), member:profiles!member_id(name)")
-        .eq("course_id", occ.courseId)
-        .eq("status", "已付款")
-      const names = [...new Set(((orders ?? []) as unknown as {
-        student: { name: string } | null; member: { name: string } | null
-      }[]).map(o => o.student?.name ?? o.member?.name).filter(Boolean))] as string[]
-      setStudents(names.map(name => ({ name, present: true, absentType: null })))
+      const res = await fetch(`/api/attendance/roster?courseId=${occ.courseId}&date=${attDate(occ.dateStr)}`)
+      const d = await res.json()
+      if (!res.ok) { alert(`載入名冊失敗：${d.error ?? res.status}`); return }
+      setInternal(!!d.internal)
+      setRowId(d.rowId)
+      setStudents(((d.records ?? []) as AttRecord[]).map(fromStatus))
     })()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedOcc, occs.length])
@@ -118,8 +108,8 @@ export default function AttendancePage() {
   async function save() {
     if (!occ || saving) return
     setSaving(true)
-    // 經 API 儲存：出席自動核銷課堂券、改缺席自動退券
-    const records = students.map(s => ({ name: s.name, status: toStatus(s) }))
+    // 經 API 儲存：出席/缺席核銷、延期退券
+    const records = students.map(s => ({ name: s.name, status: toStatus(s), ticketId: s.ticketId, ticketNo: s.ticketNo }))
     const res = await fetch("/api/attendance/save", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -199,7 +189,9 @@ export default function AttendancePage() {
             <p className="text-[10px] text-[#aaa] uppercase tracking-widest mb-2">學生名單</p>
             <div className="bg-white rounded-xl divide-y divide-[#f5f5f5] border border-[#f0f0f0]">
               {students.length === 0 && (
-                <p className="px-4 py-4 text-sm text-[#ccc]">尚無學生，請在下方新增</p>
+                <p className="px-4 py-4 text-sm text-[#ccc]">
+                  {internal ? "這一堂還沒有人報名" : "尚無學生，請在下方新增"}
+                </p>
               )}
               {students.map((student) => (
                 <div key={student.name} className="px-4 py-3.5">
@@ -209,7 +201,10 @@ export default function AttendancePage() {
                       <div className="w-8 h-8 bg-[#f2f2f2] rounded-full shrink-0 flex items-center justify-center text-[11px] text-[#999]">
                         {student.name.slice(0, 1)}
                       </div>
-                      <p className="text-sm font-medium">{student.name}</p>
+                      <div>
+                        <p className="text-sm font-medium">{student.name}</p>
+                        {student.ticketNo && <p className="text-[10px] text-[#bbb] font-mono">{student.ticketNo}</p>}
+                      </div>
                     </div>
                     <div className="flex gap-2 items-center">
                       <button
@@ -232,10 +227,12 @@ export default function AttendancePage() {
                       >
                         缺席
                       </button>
-                      <button onClick={() => removeStudent(student.name)}
-                        className="text-[#ddd] hover:text-red-400 transition-colors text-xs px-1">
-                        ✕
-                      </button>
+                      {!internal && (
+                        <button onClick={() => removeStudent(student.name)}
+                          className="text-[#ddd] hover:text-red-400 transition-colors text-xs px-1">
+                          ✕
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -271,15 +268,22 @@ export default function AttendancePage() {
               ))}
             </div>
 
-            {/* Add student */}
-            <div className="flex gap-2 mt-2">
-              <input value={newName} onChange={e => setNewName(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && addStudent()}
-                placeholder="新增學生姓名…"
-                className="flex-1 px-3 py-2 text-sm bg-white border border-[#f0f0f0] rounded-xl outline-none focus:border-black transition-colors" />
-              <button onClick={addStudent}
-                className="px-4 py-2 bg-black text-white text-sm rounded-xl">＋</button>
-            </div>
+            {/* Add student（外部課程手動名冊；內部課程名冊來自報名綁定） */}
+            {!internal && (
+              <div className="flex gap-2 mt-2">
+                <input value={newName} onChange={e => setNewName(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && addStudent()}
+                  placeholder="新增學生姓名…"
+                  className="flex-1 px-3 py-2 text-sm bg-white border border-[#f0f0f0] rounded-xl outline-none focus:border-black transition-colors" />
+                <button onClick={addStudent}
+                  className="px-4 py-2 bg-black text-white text-sm rounded-xl">＋</button>
+              </div>
+            )}
+            {internal && (
+              <p className="text-[10px] text-[#bbb] mt-2 px-1">
+                出席／缺席會核銷課堂券；選「延期補課」券退回學員，可重新預約
+              </p>
+            )}
           </div>
 
           {/* Save button */}

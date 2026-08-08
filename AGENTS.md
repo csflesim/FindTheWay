@@ -39,11 +39,15 @@ Next.js App Router + **Supabase**（Postgres / Auth / Storage）正式系統，�
 
 ## 交易流
 
-1. 前台下單（課程詳情單堂直購 / `/m/tickets/buy` 券包）→ `orders` 狀態「待確認」
-2. 後台訂單管理「確認付款」→ 券包依 `products.validity_months` 自動發 `tickets`（`TK-<訂單號>-XX` 含效期）；單堂直購不發券
-3. 票券歸屬：`student_id`（原持有）→ `transferred_to`（轉讓，經 `/api/member/transfer-tickets` 驗證後寫入）；未指定學員的票券屬「本人」
-4. 售後：收回票券設「已失效」、訂單標「已售後」、`after_sales` jsonb 記錄
-5. 帳務頁全由訂單即時推導（收入/退款/待收款/課券均攤結算）
+**核心模型：訂單只管金流，券管上課資格（狀態機：未使用 ⇄ 待使用（綁課程＋日期）→ 已使用；已失效）。每張券 `history` jsonb 記完整歷程。**
+
+1. 購券：前台下單（券包 / 課程單堂直購＝買該課程綁定的「單堂」商品 ×N 堂，`booking_dates` 記日期）→「待確認」→ 後台「確認付款」發 `tickets`（單堂直購發券後自動綁定 → 待使用；綁定前檢查各堂名額）
+2. 報名：會員用「未使用」券綁定課程＋日期（`/api/member/book`，立即生效；檢查券種在 `courses.ticket_types`、未過期、名額）；取消上課（`/api/member/cancel-booking`，限期限內＝上課前 `products.cancel_hours` 小時；過期的待使用券鎖死只能出席）
+3. 點名（`/api/attendance/{roster,save}`）：內部課名冊＝綁定該堂的券；出席／缺席 → 核銷（已使用）、延期 → 退回未使用解綁。外部課純點名不碰券
+4. 轉讓：僅「未使用＋未過期＋商品 transferable」（`/api/member/transfer-tickets`）；換課＝取消上課＋重新報名
+5. 售後：僅「未使用」可收回設「已失效」；後台可對券「人工延期／回復」（`/api/admin/ticket-action`）
+6. 商品 `is_single`（單堂型別，堂數固定 1）；內部課程的 `ticket_types` 必含至少一個單堂商品（直購計價依據，課程 price 欄位退役）；`enrolled` ＝未來場次綁定中的券數（`syncCourseEnrollment`）
+7. 帳務頁全由訂單即時推導（收入/退款/待收款/課券均攤結算）
 
 共用訂單邏輯在 `src/app/sys-admin/_lib/orders.tsx`（`ORDER_SELECT` 單一 JOIN 查詢、`orderFromRow`、`issueTickets`、`OrderDetail`）。
 
