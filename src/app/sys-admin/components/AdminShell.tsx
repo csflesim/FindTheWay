@@ -12,7 +12,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   }
 
   return (
-    <div className="flex min-h-screen bg-[#f7f7f6]">
+    <div className="flex min-h-screen bg-[#f6f7fb]">
       <AdminNav />
       <main className="flex-1 overflow-auto pt-12 lg:pt-0">
         <AdminHeader />
