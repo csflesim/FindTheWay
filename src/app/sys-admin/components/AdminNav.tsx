@@ -8,7 +8,7 @@ import {
   LayoutDashboard, BookOpen, Ticket,
   Users, ShoppingBag, ClipboardList,
   LogOut, Menu, X, UserCircle, GraduationCap, Wallet,
-  Settings2, UserCog, Shield, SlidersHorizontal, ChevronDown, ChevronRight, Bell, Building2, LayoutGrid, CreditCard, Smartphone, MonitorPlay, MessageSquare, Zap, RotateCcw,
+  Settings2, UserCog, Shield, SlidersHorizontal, ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, Bell, Building2, LayoutGrid, CreditCard, Smartphone, MonitorPlay, MessageSquare, Zap, RotateCcw,
 } from "lucide-react"
 
 // 淺色系後台版面：白色側欄＋靛藍主色（active 膠囊）、頂欄麵包屑＋鈴鐺＋頭像選單
@@ -323,31 +323,83 @@ function NavLinks({ onClose }: { onClose?: () => void }) {
   )
 }
 
-function Brand() {
+function Brand({ collapsed }: { collapsed?: boolean }) {
   return (
-    <div className="flex items-center gap-2.5 px-5 py-4 border-b border-white/10">
-      <div className="w-8 h-8 rounded-xl flex items-center justify-center text-white text-sm font-medium"
+    <div className={`flex items-center gap-2.5 py-4 border-b border-white/10 ${collapsed ? "justify-center px-2" : "px-5"}`}>
+      <div className="w-8 h-8 rounded-xl flex items-center justify-center text-white text-sm font-medium shrink-0"
         style={{ backgroundColor: ACCENT }}>
         忙
       </div>
-      <div>
-        <p className="text-sm font-semibold leading-tight text-white">忙碌不迷路</p>
-        <p className="text-[10px] text-white/40 leading-tight">管理後台</p>
-      </div>
+      {!collapsed && (
+        <div>
+          <p className="text-sm font-semibold leading-tight text-white">忙碌不迷路</p>
+          <p className="text-[10px] text-white/40 leading-tight">管理後台</p>
+        </div>
+      )}
     </div>
+  )
+}
+
+/** 收合狀態的圖示欄：點任一群組圖示會展開側欄 */
+function CollapsedRail({ onExpand }: { onExpand: () => void }) {
+  const pathname = usePathname()
+  const topActive = pathname === topItem.href
+  const rail: { key: string; icon: React.ElementType; active: boolean }[] = [
+    ...navGroups.map(g => ({
+      key: g.group, icon: g.icon,
+      active: g.items.some(i => pathname.startsWith(i.href)),
+    })),
+    { key: "系統管理", icon: Settings2, active: sysItems.some(i => pathname.startsWith(i.href)) },
+  ]
+  return (
+    <nav className="flex-1 px-2 py-3 flex flex-col gap-1 items-center overflow-y-auto">
+      <Link href={topItem.href} title={topItem.label}
+        className={`p-2.5 rounded-xl transition-colors ${
+          topActive ? "bg-white text-black" : "text-white/50 hover:text-white hover:bg-white/10"
+        }`}>
+        <topItem.icon size={17} strokeWidth={1.5} />
+      </Link>
+      {rail.map(({ key, icon: Icon, active }) => (
+        <button key={key} title={key} onClick={onExpand}
+          className={`p-2.5 rounded-xl transition-colors ${
+            active ? "bg-white/15 text-white" : "text-white/50 hover:text-white hover:bg-white/10"
+          }`}>
+          <Icon size={17} strokeWidth={1.5} />
+        </button>
+      ))}
+    </nav>
   )
 }
 
 export default function AdminNav() {
   const [open, setOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
   const me = useMe()
+
+  useEffect(() => {
+    try { setCollapsed(localStorage.getItem("ftw.admin-nav.collapsed") === "1") } catch {}
+  }, [])
+  function toggleCollapsed() {
+    setCollapsed(v => {
+      try { localStorage.setItem("ftw.admin-nav.collapsed", v ? "0" : "1") } catch {}
+      return !v
+    })
+  }
 
   return (
     <>
       {/* ── Desktop sidebar ─────────────────────── */}
-      <aside className="hidden lg:flex flex-col w-56 min-h-screen bg-black shrink-0">
-        <Brand />
-        <NavLinks />
+      <aside className={`hidden lg:flex flex-col min-h-screen bg-black shrink-0 transition-[width] duration-200 ${collapsed ? "w-16" : "w-56"}`}>
+        <Brand collapsed={collapsed} />
+        {collapsed ? <CollapsedRail onExpand={toggleCollapsed} /> : <NavLinks />}
+        <div className="border-t border-white/10 p-2">
+          <button onClick={toggleCollapsed} title={collapsed ? "展開選單" : "收合選單"}
+            className={`flex items-center gap-2 rounded-xl py-2 text-sm text-white/40 hover:text-white hover:bg-white/10 transition-colors ${
+              collapsed ? "justify-center w-full" : "px-3 w-full"
+            }`}>
+            {collapsed ? <ChevronsRight size={16} /> : <><ChevronsLeft size={16} />收合選單</>}
+          </button>
+        </div>
       </aside>
 
       {/* ── Mobile top bar ──────────────────────── */}
