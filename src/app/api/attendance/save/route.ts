@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 // 儲存點名並自動核銷課堂券：
 // - 「出席」的學生：找一張其名下（或本人）未使用票券標記「已使用」，票券 id 記回 records
 // - 從出席改成缺席/延期：把先前核銷的那張票券退回「未使用」
+// - 課程若設定「可使用課堂券」（courses.ticket_types 存商品 id），只核銷對應券包的票券
 // 權限：後台人員或教師（教師需為該課程的授課老師）。
 
 type InRecord = { name: string; status: string; ticketId?: string | null }
@@ -34,6 +35,12 @@ export async function POST(req: NextRequest) {
     if (!link) return NextResponse.json({ error: "非此課程授課教師" }, { status: 403 })
   }
 
+  // ── 課程限定可用券別（商品 id；空陣列 = 不限）──
+  const { data: courseRow } = await admin.from("courses")
+    .select("ticket_types").eq("id", courseId).maybeSingle()
+  const allowedProducts = ((courseRow?.ticket_types ?? []) as string[])
+    .filter(v => /^[0-9a-f-]{36}$/i.test(v))   // 僅認 uuid，舊名稱字串視為不限
+
   // ── 既有紀錄（取得先前核銷對照）──
   const { data: existing } = await admin
     .from("course_attendance")
@@ -53,10 +60,12 @@ export async function POST(req: NextRequest) {
     const { data: student } = await admin.from("students")
       .select("id").eq("name", name).eq("status", "已核准").limit(1).maybeSingle()
     if (student) {
-      const { data: t } = await admin.from("tickets")
-        .select("id, expires_at")
+      let q = admin.from("tickets")
+        .select("id, expires_at, orders!inner(product_id)")
         .eq("status", "未使用")
         .or(`transferred_to.eq.${student.id},and(transferred_to.is.null,student_id.eq.${student.id})`)
+      if (allowedProducts.length > 0) q = q.in("orders.product_id", allowedProducts)
+      const { data: t } = await q
         .order("expires_at", { ascending: true, nullsFirst: false })
         .limit(1)
         .maybeSingle()
@@ -66,8 +75,10 @@ export async function POST(req: NextRequest) {
     const { data: member } = await admin.from("profiles")
       .select("id").eq("name", name).limit(1).maybeSingle()
     if (member) {
-      const { data: orders } = await admin.from("orders")
+      let oq = admin.from("orders")
         .select("id").eq("member_id", member.id).eq("status", "已付款")
+      if (allowedProducts.length > 0) oq = oq.in("product_id", allowedProducts)
+      const { data: orders } = await oq
       const orderIds = (orders ?? []).map(o => o.id)
       if (orderIds.length > 0) {
         const { data: t } = await admin.from("tickets")

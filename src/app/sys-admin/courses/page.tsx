@@ -313,25 +313,27 @@ function TeacherMultiSelect({ teachers, courses, classrooms, selected, onChange 
 // ── Multi-select dropdown ────────────────────────────
 
 function MultiSelect({ options, selected, onChange, placeholder }: {
-  options: string[]
+  options: { value: string; label: string }[]
   selected: string[]
   onChange: (v: string[]) => void
   placeholder: string
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
-  const filtered = options.filter(o => o.includes(query))
+  const filtered = options.filter(o => o.label.includes(query))
+  const labelOf = Object.fromEntries(options.map(o => [o.value, o.label]))
+  const selectedLabels = selected.map(v => labelOf[v]).filter(Boolean)
 
-  function toggle(o: string) {
-    onChange(selected.includes(o) ? selected.filter(s => s !== o) : [...selected, o])
+  function toggle(v: string) {
+    onChange(selected.includes(v) ? selected.filter(s => s !== v) : [...selected, v])
   }
 
   return (
     <div className="relative">
       <button type="button" onClick={() => setOpen(v => !v)}
         className="w-full px-3 py-2.5 text-sm bg-[#fafaf9] border border-[#f0f0f0] rounded-xl outline-none text-left flex items-center justify-between hover:border-black transition-colors">
-        <span className={selected.length === 0 ? "text-[#bbb]" : ""}>
-          {selected.length === 0 ? placeholder : selected.join("、")}
+        <span className={selectedLabels.length === 0 ? "text-[#bbb]" : ""}>
+          {selectedLabels.length === 0 ? placeholder : selectedLabels.join("、")}
         </span>
         <ChevronRight size={14} className={`text-[#bbb] transition-transform ${open ? "rotate-90" : ""}`} />
       </button>
@@ -345,13 +347,13 @@ function MultiSelect({ options, selected, onChange, placeholder }: {
           <div className="max-h-48 overflow-y-auto">
             {filtered.length === 0 && <p className="px-4 py-3 text-sm text-[#ccc]">無結果</p>}
             {filtered.map(o => (
-              <button key={o} type="button" onClick={() => toggle(o)}
+              <button key={o.value} type="button" onClick={() => toggle(o.value)}
                 className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-[#f9f9f9] transition-colors text-left">
-                <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${selected.includes(o) ? "bg-black border-black" : "border-[#ddd]"
+                <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${selected.includes(o.value) ? "bg-black border-black" : "border-[#ddd]"
                   }`}>
-                  {selected.includes(o) && <svg width="9" height="7" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3.5 6L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+                  {selected.includes(o.value) && <svg width="9" height="7" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3.5 6L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
                 </span>
-                {o}
+                {o.label}
               </button>
             ))}
           </div>
@@ -387,7 +389,7 @@ export default function CoursesPage() {
   const [teachers, setTeachers] = useState<TeacherRef[]>([])
   const [classrooms, setClassrooms] = useState<ClassroomRef[]>([])
   const [unitOptions, setUnitOptions] = useState<UnitRef[]>([])
-  const [ticketOptions, setTicketOptions] = useState<string[]>([])
+  const [ticketOptions, setTicketOptions] = useState<{ value: string; label: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [query, setQuery] = useState("")
@@ -405,7 +407,7 @@ export default function CoursesPage() {
       supabase.from("teachers").select("id, name").order("created_at"),
       supabase.from("classrooms").select("id, name").order("created_at"),
       supabase.from("units").select("id, name, sub_units").order("created_at"),
-      supabase.from("products").select("name").eq("active", true).order("sort_order"),
+      supabase.from("products").select("id, name").eq("active", true).order("sort_order"),
     ]).then(([cRes, tRes, roomRes, uRes, pRes]) => {
       if (cRes.error) console.error("載入課程失敗:", cRes.error.message)
       else setCourses((cRes.data as CourseRow[]).map(fromRow))
@@ -413,7 +415,8 @@ export default function CoursesPage() {
       setClassrooms((roomRes.data ?? []) as ClassroomRef[])
       setUnitOptions(((uRes.data ?? []) as { id: string; name: string; sub_units: { name: string; location: string }[] }[])
         .map(u => ({ id: u.id, name: u.name, subUnits: Array.isArray(u.sub_units) ? u.sub_units : [] })))
-      setTicketOptions(((pRes.data ?? []) as { name: string }[]).map(p => p.name))
+      // 課程的可使用課堂券存商品 id（名稱變動不影響對應）
+      setTicketOptions(((pRes.data ?? []) as { id: string; name: string }[]).map(p => ({ value: p.id, label: p.name })))
       setLoading(false)
     })
   }, [supabase])
