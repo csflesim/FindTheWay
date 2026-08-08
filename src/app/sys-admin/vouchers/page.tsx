@@ -43,18 +43,19 @@ function fmtEventTime(iso: string): string {
 function TicketDrawer({ ticket, order, onClose, onChanged }: {
   ticket: Ticket; order: Order; onClose: () => void; onChanged: () => void
 }) {
-  const [extendDate, setExtendDate] = useState("")
+  const [extendDays, setExtendDays] = useState("")
   const [busy, setBusy] = useState(false)
 
   async function act(action: "extend" | "restore") {
     if (busy) return
-    if (action === "extend" && !extendDate) { alert("請先選擇新效期"); return }
+    const n = Math.floor(Number(extendDays))
+    if (action === "extend" && (!n || n < 1)) { alert("請輸入要延長的天數"); return }
     if (action === "restore" && !confirm(`確定要把 ${ticket.no} 退回「未使用」？\n若原本已預約課程，綁定會一併解除。`)) return
     setBusy(true)
     const res = await fetch("/api/admin/ticket-action", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ticketId: ticket.id, action, expiresAt: extendDate || undefined }),
+      body: JSON.stringify({ ticketId: ticket.id, action, days: action === "extend" ? n : undefined }),
     })
     const d = await res.json()
     setBusy(false)
@@ -115,13 +116,15 @@ function TicketDrawer({ ticket, order, onClose, onChanged }: {
           <div className="border-t border-[#f5f5f5] pt-4 flex flex-col gap-3">
             <p className="text-[11px] text-[#aaa] uppercase tracking-widest">人工操作</p>
             <div className="flex gap-2">
-              <input type="date" value={extendDate} onChange={e => setExtendDate(e.target.value)}
+              <input type="number" min={1} value={extendDays} onChange={e => setExtendDays(e.target.value)}
+                placeholder="延長天數（例：30）"
                 className="flex-1 px-3 py-2 text-sm bg-[#fafaf9] border border-[#f0f0f0] rounded-xl outline-none focus:border-black transition-colors" />
               <button onClick={() => act("extend")} disabled={busy}
                 className="px-4 py-2 text-sm border border-[#e8e8e8] rounded-xl text-[#333] hover:border-black disabled:opacity-40 transition-colors whitespace-nowrap">
-                延期至此
+                延期
               </button>
             </div>
+            <p className="text-[10px] text-[#bbb] -mt-1">從原效期（{ticket.expiresAt ?? "—"}）往後加；已過期的券從今天起算</p>
             {(ticket.status === "已使用" || ticket.status === "待使用") && (
               <button onClick={() => act("restore")} disabled={busy}
                 className="w-full py-2.5 text-sm border border-[#e8e8e8] rounded-xl text-[#333] hover:border-black disabled:opacity-40 transition-colors">

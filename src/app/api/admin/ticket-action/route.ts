@@ -1,19 +1,19 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireStaffUser } from "@/lib/admin-guard"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { withEvent } from "@/lib/ticket-history"
+import { withEvent, twToday } from "@/lib/ticket-history"
 import { syncCourseEnrollment } from "@/lib/workflow-engine"
 
 // 後台卡券人工操作：
-// - extend：人工延期（改效期）——過期棄權的券可救回
+// - extend：人工延期（在原效期上加 N 天；已過期則從今天起算）——過期棄權的券可救回
 // - restore：人工回復——已使用（含缺席核銷）退回未使用、已預約解除綁定退回未使用
 export async function POST(req: NextRequest) {
   const staff = await requireStaffUser()
   if (!staff) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
   const actor = `${staff.name}（後台）`
 
-  const { ticketId, action, expiresAt } = await req.json() as {
-    ticketId?: string; action?: "extend" | "restore"; expiresAt?: string
+  const { ticketId, action, days } = await req.json() as {
+    ticketId?: string; action?: "extend" | "restore"; days?: number
   }
   if (!ticketId || !action) return NextResponse.json({ error: "參數不完整" }, { status: 400 })
 
@@ -26,15 +26,22 @@ export async function POST(req: NextRequest) {
   if (!t) return NextResponse.json({ error: "找不到課堂券" }, { status: 404 })
 
   if (action === "extend") {
-    if (!expiresAt || !/^\d{4}-\d{2}-\d{2}$/.test(expiresAt)) {
-      return NextResponse.json({ error: "請提供新效期（YYYY-MM-DD）" }, { status: 400 })
+    const n = Math.floor(Number(days))
+    if (!n || n < 1 || n > 3650) {
+      return NextResponse.json({ error: "請輸入要延長的天數（1–3650）" }, { status: 400 })
     }
+    // 基準日：原效期；已過期或無效期則從今天起算（只會往後，不可能倒退）
+    const today = twToday()
+    const base = t.expires_at && t.expires_at >= today ? t.expires_at : today
+    const d = new Date(`${base}T12:00:00`)
+    d.setDate(d.getDate() + n)
+    const newExpiry = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
     const { error } = await admin.from("tickets").update({
-      expires_at: expiresAt,
-      history: withEvent(t.history, "人工延期", `效期 ${t.expires_at ?? "—"} → ${expiresAt}`.replace(/-/g, "/"), actor),
+      expires_at: newExpiry,
+      history: withEvent(t.history, "人工延期", `效期 ${t.expires_at ?? "—"} → ${newExpiry}（+${n} 天）`.replace(/-/g, "/"), actor),
     }).eq("id", ticketId)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json({ ok: true })
+    return NextResponse.json({ ok: true, expiresAt: newExpiry })
   }
 
   // restore：退回未使用
