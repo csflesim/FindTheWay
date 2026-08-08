@@ -21,6 +21,8 @@ const TEMPLATE_VARS: TemplateVar[] = [
   { key: "ticketCount", label: "課堂券數量", sample: "4 張" },
   { key: "studioName",  label: "工作室名稱", sample: "忙碌不迷路藝術工作坊" },
   { key: "loginUrl",    label: "登入連結",   sample: "https://findtheway.com/m" },
+  { key: "orderUrl",    label: "訂單連結",   sample: "https://findtheway.com/m/orders" },
+  { key: "courseUrl",   label: "課程連結",   sample: "https://findtheway.com/m/courses/xxx" },
 ]
 const VAR_SAMPLES: Record<string, string> = Object.fromEntries(TEMPLATE_VARS.map(v => [v.key, v.sample]))
 const renderVars = (s: string) => (s ?? "").replace(/\{\{\s*(\w+)\s*\}\}/g, (m, k) => k in VAR_SAMPLES ? VAR_SAMPLES[k] : m)

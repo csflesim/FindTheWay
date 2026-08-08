@@ -63,6 +63,8 @@ function varsFrom(o: OrderCtx): Record<string, string> {
     ticketCount: "",
     studioName: "忙碌不迷路藝術工作坊",
     loginUrl: `${process.env.NEXT_PUBLIC_BASE_URL ?? ""}/m`,
+    orderUrl: `${process.env.NEXT_PUBLIC_BASE_URL ?? ""}/m/orders`,
+    courseUrl: o.course_id ? `${process.env.NEXT_PUBLIC_BASE_URL ?? ""}/m/courses/${o.course_id}` : "",
     orderNo: o.order_no,
     amount: `NT$ ${o.amount.toLocaleString()}`,
   }
