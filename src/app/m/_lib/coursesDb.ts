@@ -49,7 +49,28 @@ function splitSchedule(schedule: string): { date: string; time: string } {
   return { date: schedule.slice(0, i), time: schedule.slice(i + 1) }
 }
 
-function fromRow(r: CourseRow): MemberCourse {
+// 單堂價格＝課程允許券種中的「單堂」商品售價（課程 price 欄位已退役，僅作無單堂商品時的後備）
+async function singlePriceMap(supabase: SupabaseClient, rows: CourseRow[]): Promise<Map<string, number>> {
+  const ids = [...new Set(rows.flatMap(r => r.ticket_types ?? []))]
+  if (ids.length === 0) return new Map()
+  const { data } = await supabase
+    .from("products")
+    .select("id, price")
+    .in("id", ids)
+    .eq("is_single", true)
+    .eq("active", true)
+  return new Map(((data ?? []) as { id: string; price: number }[]).map(p => [p.id, p.price]))
+}
+
+function priceOf(r: CourseRow, singles: Map<string, number>): number {
+  for (const id of r.ticket_types ?? []) {
+    const p = singles.get(id)
+    if (p !== undefined) return p
+  }
+  return r.price
+}
+
+function fromRow(r: CourseRow, singles: Map<string, number>): MemberCourse {
   const { date, time } = splitSchedule(r.schedule)
   return {
     id: r.id,
@@ -63,7 +84,7 @@ function fromRow(r: CourseRow): MemberCourse {
     date, time,
     studio: r.classroom?.name ?? "",
     spots: Math.max(0, r.capacity - r.enrolled),
-    price: r.price,
+    price: priceOf(r, singles),
     desc: r.description ?? "",
     highlights: r.highlights ?? [],
     imgSquare: r.cover_url ?? undefined,
@@ -87,7 +108,9 @@ export async function fetchMemberCourses(supabase: SupabaseClient): Promise<Memb
     console.error("載入課程失敗:", error.message)
     return []
   }
-  return (data as unknown as CourseRow[]).map(fromRow)
+  const rows = data as unknown as CourseRow[]
+  const singles = await singlePriceMap(supabase, rows)
+  return rows.map(r => fromRow(r, singles))
 }
 
 /** 單一課程詳情 */
@@ -101,5 +124,7 @@ export async function fetchMemberCourse(supabase: SupabaseClient, id: string): P
     if (error) console.error("載入課程失敗:", error.message)
     return null
   }
-  return fromRow(data as unknown as CourseRow)
+  const row = data as unknown as CourseRow
+  const singles = await singlePriceMap(supabase, [row])
+  return fromRow(row, singles)
 }
