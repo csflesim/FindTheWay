@@ -7,13 +7,14 @@ import { createClient } from "@/lib/supabase/client"
 import { fetchMemberData, type MemberStudent } from "../_lib/studentsDb"
 
 const quickActions = [
-  { label: "購買課堂券", icon: Ticket,     href: "/m/tickets/buy" },
+  { label: "我的課堂券", icon: Ticket,     href: "/m/tickets" },
   { label: "管理學員",   icon: Users,      href: "/m/students" },
   { label: "報名課程",   icon: BookOpen,   href: "/m/courses" },
   { label: "出席紀錄",   icon: ScrollText, href: "/m/orders" },
 ]
 
 const menuItems = [
+  { label: "我的課堂券", href: "/m/tickets" },
   { label: "我的學生",  href: "/m/students" },
   { label: "購買課堂券", href: "/m/tickets/buy" },
   { label: "轉讓課堂券", href: "/m/tickets/transfer" },
