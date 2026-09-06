@@ -134,7 +134,10 @@ export default function AccountsPage() {
 
   async function saveAdd() {
     if (saving) return
-    if (!form.email.trim() || !form.password.trim()) { alert("Email 與密碼為必填"); return }
+    if ((!form.email.trim() && !form.phone.trim()) || !form.password.trim()) {
+      alert("電話或 Email 至少填一項，密碼為必填")
+      return
+    }
     setSaving(true)
     const res = await fetch("/api/admin/members", {
       method: "POST",
@@ -150,16 +153,24 @@ export default function AccountsPage() {
 
   async function saveEdit() {
     if (!editing || saving) return
+    if (!form.email.trim() && !form.phone.trim()) {
+      alert("電話或 Email 至少保留一項")
+      return
+    }
     setSaving(true)
     const res = await fetch("/api/admin/members", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: editing.id, name: form.name.trim(), phone: form.phone.trim(), password: form.password || undefined }),
+      body: JSON.stringify({
+        id: editing.id, name: form.name.trim(), email: form.email.trim(),
+        phone: form.phone.trim(), password: form.password || undefined,
+      }),
     })
     const d = await res.json()
     setSaving(false)
     if (!res.ok || !d.ok) { alert(`儲存失敗：${d.error ?? res.status}`); return }
-    setAccounts(prev => prev.map(a => a.id === editing.id ? { ...a, name: form.name.trim(), phone: form.phone.trim() } : a))
+    setAccounts(prev => prev.map(a => a.id === editing.id
+      ? { ...a, name: form.name.trim(), email: form.email.trim(), phone: form.phone.trim() } : a))
     close()
   }
 
@@ -277,18 +288,14 @@ export default function AccountsPage() {
                   placeholder="會員姓名" className={inputCls} />
               </Field>
 
-              <Field label="Email">
-                {drawer === "add" ? (
-                  <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-                    placeholder="email@example.com" className={inputCls} />
-                ) : (
-                  <div className="w-full px-3 py-2.5 text-sm bg-[#f5f5f5] border border-[#f0f0f0] rounded-xl text-[#999]">
-                    {form.email.endsWith("@findtheway.app") ? "（LINE 帳號，無 Email）" : form.email}
-                  </div>
-                )}
+              <Field label="Email（與電話擇一必填）">
+                <input type="email" value={form.email.endsWith("@findtheway.app") ? "" : form.email}
+                  onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                  placeholder={form.email ? "email@example.com" : "未設定（可用電話登入）"}
+                  className={inputCls} />
               </Field>
 
-              <Field label="電話">
+              <Field label="電話（與 Email 擇一必填）">
                 <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
                   placeholder="09xx-xxx-xxx" className={inputCls} />
               </Field>
