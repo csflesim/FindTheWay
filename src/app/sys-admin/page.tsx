@@ -27,6 +27,7 @@ type CourseLite = {
   enrolled: number
   status: string
   visible: boolean
+  skip_dates: string[] | null
 }
 
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"]
@@ -68,7 +69,7 @@ export default function AdminDashboard() {
       supabase.from("orders")
         .select("id, order_no, amount, status, created_at, item_name, after_sales, member:profiles!member_id(name), student:students!student_id(name)")
         .order("created_at", { ascending: false }),
-      supabase.from("courses").select("id, title, schedule, capacity, enrolled, status, visible"),
+      supabase.from("courses").select("id, title, schedule, capacity, enrolled, status, visible, skip_dates"),
     ]).then(([pRes, sRes, tRes, oRes, cRes]) => {
       const profiles = pRes.data ?? []
       const students = sRes.data ?? []
@@ -91,7 +92,7 @@ export default function AdminDashboard() {
 
       const activeCourses = courses.filter(c => c.status === "開課中")
       const monthClasses  = activeCourses.reduce(
-        (n, c) => n + countMonthOccurrences(c.schedule, now.getFullYear(), now.getMonth()), 0)
+        (n, c) => n + countMonthOccurrences(c.schedule, now.getFullYear(), now.getMonth(), c.skip_dates ?? []), 0)
       const monthIncome = orders
         .filter(o => (o.status === "已付款" || o.status === "已售後") && inMonth(o.created_at))
         .reduce((s, o) => s + o.amount, 0)
@@ -119,7 +120,7 @@ export default function AdminDashboard() {
       for (let m = 0; m < 2; m++) {
         const d = new Date(now.getFullYear(), now.getMonth() + m, 1)
         for (const c of activeCourses.filter(c => c.visible)) {
-          const map = expandScheduleToMonth(c.schedule, c.title, "", d.getFullYear(), d.getMonth())
+          const map = expandScheduleToMonth(c.schedule, c.title, "", d.getFullYear(), d.getMonth(), c.skip_dates ?? [])
           for (const [key, evs] of Object.entries(map)) {
             const ts = new Date(key + "T00:00:00").getTime()
             if (ts < now.getTime() - 86400000 || ts > now.getTime() + 30 * 86400000) continue

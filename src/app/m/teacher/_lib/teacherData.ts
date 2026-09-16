@@ -10,6 +10,7 @@ export type TeacherCourse = {
   studio: string
   capacity: number
   enrolled: number
+  skipDates: string[]
 }
 
 export type Occurrence = {
@@ -29,7 +30,7 @@ export async function fetchTeacherCourses(
 ): Promise<TeacherCourse[]> {
   const { data, error } = await supabase
     .from("courses")
-    .select("id, title, schedule, capacity, enrolled, status, classroom:classrooms(name), course_teachers(teacher_id)")
+    .select("id, title, schedule, capacity, enrolled, status, skip_dates, classroom:classrooms(name), course_teachers(teacher_id)")
     .eq("status", "開課中")
   if (error) {
     console.error("載入教師課程失敗:", error.message)
@@ -37,6 +38,7 @@ export async function fetchTeacherCourses(
   }
   return (data as unknown as {
     id: string; title: string; schedule: string; capacity: number; enrolled: number
+    skip_dates: string[] | null
     classroom: { name: string } | null
     course_teachers: { teacher_id: string }[]
   }[])
@@ -44,6 +46,7 @@ export async function fetchTeacherCourses(
     .map(c => ({
       id: c.id, title: c.title, schedule: c.schedule,
       studio: c.classroom?.name ?? "", capacity: c.capacity, enrolled: c.enrolled,
+      skipDates: c.skip_dates ?? [],
     }))
 }
 
@@ -57,7 +60,7 @@ export function occurrencesInRange(
   const cursor = new Date(start.getFullYear(), start.getMonth(), 1)
   while (cursor <= end) {
     for (const c of courses) {
-      const map = expandScheduleToMonth(c.schedule, c.title, c.studio, cursor.getFullYear(), cursor.getMonth())
+      const map = expandScheduleToMonth(c.schedule, c.title, c.studio, cursor.getFullYear(), cursor.getMonth(), c.skipDates)
       for (const [dateStr, evs] of Object.entries(map)) {
         const d = new Date(dateStr + "T00:00:00")
         if (d < start || d > end) continue

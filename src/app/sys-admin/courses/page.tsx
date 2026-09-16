@@ -32,6 +32,7 @@ type Course = {
   // 前台內容
   desc?: string
   highlights?: string[]
+  skipDates: string[]   // 停課日期 "YYYY-MM-DD"
 }
 
 type TeacherRef = { id: string; name: string }
@@ -57,6 +58,7 @@ type CourseRow = {
   notes: string | null
   cover_url: string | null
   banner_url: string | null
+  skip_dates: string[] | null
   course_teachers?: { teacher_id: string }[]
 }
 
@@ -70,6 +72,7 @@ function fromRow(r: CourseRow): Course {
     unitId: r.unit_id, subUnit: r.sub_unit ?? "", location: r.location ?? "",
     notes: r.notes ?? "", desc: r.description ?? "", highlights: r.highlights ?? [],
     imgSquare: r.cover_url ?? "", imgLandscape: r.banner_url ?? "",
+    skipDates: r.skip_dates ?? [],
   }
 }
 
@@ -118,7 +121,7 @@ function TeacherScheduleModal({ teacher, courses, classrooms, onClose }: {
   const schedule = useMemo(() => mergeMonthEvents(
     courses
       .filter(c => c.teacherIds.includes(teacher.id))
-      .map(c => expandScheduleToMonth(c.schedule, c.title, c.classroomId ? (roomName[c.classroomId] ?? "") : "", year, month))
+      .map(c => expandScheduleToMonth(c.schedule, c.title, c.classroomId ? (roomName[c.classroomId] ?? "") : "", year, month, c.skipDates))
   ), [courses, teacher.id, roomName, year, month])
 
   const firstDay = new Date(year, month, 1).getDay()
@@ -245,6 +248,7 @@ const EMPTY_FORM = {
   scheduleDay: "", scheduleDate: "", scheduleStart: "10:00", scheduleEnd: "12:00",
   status: "草稿" as Course["status"],
   classroomId: "", enrolled: 0, capacity: 10, ticketTypes: [] as string[], visible: true,
+  skipDates: [] as string[],
   imgSquare: "", imgLandscape: "",
   unitId: "", subUnit: "", location: "", notes: "",
   desc: "", highlights: "",
@@ -456,6 +460,7 @@ export default function CoursesPage() {
       ...parsed,
       status: c.status,
       classroomId: c.classroomId ?? "", enrolled: c.enrolled ?? 0, capacity: c.capacity ?? 10, ticketTypes: c.ticketTypes ?? [], visible: c.visible,
+      skipDates: c.skipDates ?? [],
       imgSquare: c.imgSquare ?? "", imgLandscape: c.imgLandscape ?? "",
       unitId: c.unitId ?? "", subUnit: c.subUnit ?? "", location: c.location ?? "", notes: c.notes ?? "",
       desc: c.desc ?? "", highlights: (c.highlights ?? []).join("\n"),
@@ -490,6 +495,7 @@ export default function CoursesPage() {
       enrolled: isInternal ? form.enrolled : 0,
       capacity: isInternal ? form.capacity : 0,
       ticket_types: isInternal ? form.ticketTypes : [],
+      skip_dates: form.scheduleType === "固定週期" ? form.skipDates : [],
       unit_id: isExternal && form.unitId ? form.unitId : null,
       sub_unit: isExternal ? (form.subUnit || null) : null,
       location: isExternal ? (form.location || null) : null,
@@ -544,6 +550,18 @@ export default function CoursesPage() {
     if (!validateSingleProduct()) return
     setSaving(true)
     try {
+      // 新增的停課日期若已有預約，提醒後台先處理（券可在卡券管理退回）
+      const newSkips = form.skipDates.filter(d => !(editing.skipDates ?? []).includes(d))
+      if (newSkips.length > 0) {
+        const { count } = await supabase.from("tickets")
+          .select("id", { count: "exact", head: true })
+          .eq("course_id", editing.id)
+          .eq("status", "待使用")
+          .in("session_date", newSkips)
+        if ((count ?? 0) > 0 && !confirm(
+          `注意：停課日期已有 ${count} 筆預約。\n儲存後請到卡券管理把這些券「退回未使用」，讓學員改期。\n仍要儲存嗎？`
+        )) { setSaving(false); return }
+      }
       const row = await buildRow()
       const { error } = await supabase.from("courses").update(row).eq("id", editing.id)
       if (error) throw new Error(error.message)
@@ -555,6 +573,7 @@ export default function CoursesPage() {
         unitId: row.unit_id, subUnit: row.sub_unit ?? "", location: row.location ?? "", notes: row.notes ?? "",
         desc: row.description ?? "", highlights: row.highlights,
         imgSquare: row.cover_url ?? "", imgLandscape: row.banner_url ?? "",
+        skipDates: row.skip_dates,
       } : c))
       close()
     } catch (err) {
@@ -911,6 +930,47 @@ export default function CoursesPage() {
                           </select>
                         </div>
                       </div>
+
+                      {/* 停課日期：列近 8 堂，點「停課」該日不開放報名／不出現在課表 */}
+                      {form.scheduleDay && (
+                        <div>
+                          <p className="text-[11px] text-[#bbb] mb-1.5">停課日期（近 8 堂；設為停課的日期前台不可預約）</p>
+                          <div className="flex flex-col gap-1.5">
+                            {(() => {
+                              const raw = upcomingSessions(buildSchedule(form), 8)
+                              const extra = form.skipDates
+                                .filter(d => d >= raw[0]?.date && !raw.some(s => s.date === d))
+                                .map(d => ({ date: d, time: "" }))
+                              return [...raw, ...extra].sort((a, b) => a.date.localeCompare(b.date)).map(s => {
+                                const skipped = form.skipDates.includes(s.date)
+                                const wd = "日一二三四五六"[new Date(`${s.date}T12:00:00`).getDay()]
+                                return (
+                                  <div key={s.date}
+                                    className={`flex items-center justify-between px-3 py-2 rounded-lg border text-sm ${
+                                      skipped ? "border-red-100 bg-red-50" : "border-[#f0f0f0] bg-[#fafaf9]"
+                                    }`}>
+                                    <span className={skipped ? "text-red-400 line-through" : ""}>
+                                      {s.date.replace(/-/g, "/")}（{wd}）
+                                    </span>
+                                    <button type="button"
+                                      onClick={() => setForm(f => ({
+                                        ...f,
+                                        skipDates: skipped
+                                          ? f.skipDates.filter(d => d !== s.date)
+                                          : [...f.skipDates, s.date].sort(),
+                                      }))}
+                                      className={`text-[11px] px-2.5 py-1 rounded-full transition-colors ${
+                                        skipped ? "bg-red-400 text-white" : "bg-white border border-[#e8e8e8] text-[#999] hover:border-black hover:text-black"
+                                      }`}>
+                                      {skipped ? "停課" : "設為停課"}
+                                    </button>
+                                  </div>
+                                )
+                              })
+                            })()}
+                          </div>
+                        </div>
+                      )}
                     </>
                   ) : (
                     <>
@@ -1210,14 +1270,14 @@ export default function CoursesPage() {
                   </button>
                   {addDateOpen && (
                     <div className="absolute right-0 top-full mt-1 z-30 bg-white border border-[#f0f0f0] rounded-xl shadow-lg overflow-hidden w-44">
-                      {upcomingSessions(attendCourse.schedule, 6).map(s => (
+                      {upcomingSessions(attendCourse.schedule, 6, new Date(), attendCourse.skipDates).map(s => (
                         <button key={s.date} onClick={() => addSession(attendCourse, s.date)}
                           className="w-full text-left px-4 py-2.5 text-xs hover:bg-[#f9f9f9] transition-colors">
                           {s.date.replace(/-/g, "/")}
                           <span className="text-[#bbb] ml-1.5">{s.time}</span>
                         </button>
                       ))}
-                      {upcomingSessions(attendCourse.schedule, 6).length === 0 && (
+                      {upcomingSessions(attendCourse.schedule, 6, new Date(), attendCourse.skipDates).length === 0 && (
                         <p className="px-4 py-3 text-xs text-[#ccc]">班表無未來場次</p>
                       )}
                     </div>

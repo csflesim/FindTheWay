@@ -46,11 +46,12 @@ function TicketDrawer({ ticket, order, onClose, onChanged }: {
   const [extendDays, setExtendDays] = useState("")
   const [busy, setBusy] = useState(false)
 
-  async function act(action: "extend" | "restore") {
+  async function act(action: "extend" | "restore" | "redeem") {
     if (busy) return
     const n = Math.floor(Number(extendDays))
     if (action === "extend" && (!n || n < 1)) { alert("請輸入要延長的天數"); return }
     if (action === "restore" && !confirm(`確定要把 ${ticket.no} 退回「未使用」？\n若原本已預約課程，綁定會一併解除。`)) return
+    if (action === "redeem" && !confirm(`確定要核銷 ${ticket.no}？\n用於補登實際已上過課的舊券，核銷後狀態為「已使用」。`)) return
     setBusy(true)
     const res = await fetch("/api/admin/ticket-action", {
       method: "POST",
@@ -125,6 +126,12 @@ function TicketDrawer({ ticket, order, onClose, onChanged }: {
               </button>
             </div>
             <p className="text-[10px] text-[#bbb] -mt-1">從原效期（{ticket.expiresAt ?? "—"}）往後加；已過期的券從今天起算</p>
+            {(ticket.status === "未使用" || ticket.status === "待使用") && (
+              <button onClick={() => act("redeem")} disabled={busy}
+                className="w-full py-2.5 text-sm border border-[#e8e8e8] rounded-xl text-[#333] hover:border-black disabled:opacity-40 transition-colors">
+                人工核銷（補登已上過的課）
+              </button>
+            )}
             {(ticket.status === "已使用" || ticket.status === "待使用") && (
               <button onClick={() => act("restore")} disabled={busy}
                 className="w-full py-2.5 text-sm border border-[#e8e8e8] rounded-xl text-[#333] hover:border-black disabled:opacity-40 transition-colors">
@@ -132,7 +139,7 @@ function TicketDrawer({ ticket, order, onClose, onChanged }: {
               </button>
             )}
             <p className="text-[10px] text-[#bbb] leading-relaxed">
-              延期：過期棄權的券可用新效期救回。退回未使用：缺席核銷後想放人補課、或代會員解除預約時使用，所有操作都會記入歷程。
+              延期：過期棄權的券以天數往後延。人工核銷：補登系統外已上過的課。退回未使用：缺席核銷放人補課、或代會員解除預約。所有操作都會記入歷程。
             </p>
           </div>
         </div>

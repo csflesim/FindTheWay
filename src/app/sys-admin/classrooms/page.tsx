@@ -20,6 +20,7 @@ type CourseLite = {
   schedule: string
   classroom_id: string | null
   teachers: string[]
+  skipDates: string[]
 }
 
 const WEEKDAYS   = ["日", "一", "二", "三", "四", "五", "六"]
@@ -41,7 +42,7 @@ function ClassroomCalendarModal({ room, courses, onClose }: {
   const schedule = useMemo(() => mergeMonthEvents(
     courses
       .filter(c => c.classroom_id === room.id)
-      .map(c => expandScheduleToMonth(c.schedule, c.title, c.teachers.join("、"), year, month))
+      .map(c => expandScheduleToMonth(c.schedule, c.title, c.teachers.join("、"), year, month, c.skipDates))
   ), [courses, room.id, year, month])
 
   const firstDay = new Date(year, month, 1).getDay()
@@ -243,7 +244,7 @@ export default function ClassroomsPage() {
   useEffect(() => {
     Promise.all([
       supabase.from("classrooms").select("*").order("created_at"),
-      supabase.from("courses").select("id, title, schedule, classroom_id, course_teachers(teacher:teachers(name))"),
+      supabase.from("courses").select("id, title, schedule, classroom_id, skip_dates, course_teachers(teacher:teachers(name))"),
     ]).then(([roomsRes, coursesRes]) => {
       if (roomsRes.error) console.error("載入教室失敗:", roomsRes.error.message)
       else setClassrooms((roomsRes.data as ClassroomRow[]).map(r => ({
@@ -254,10 +255,12 @@ export default function ClassroomsPage() {
       if (coursesRes.error) console.error("載入課程失敗:", coursesRes.error.message)
       else setCourses((coursesRes.data as unknown as {
         id: string; title: string; schedule: string; classroom_id: string | null
+        skip_dates: string[] | null
         course_teachers: { teacher: { name: string } | null }[]
       }[]).map(c => ({
         id: c.id, title: c.title, schedule: c.schedule, classroom_id: c.classroom_id,
         teachers: c.course_teachers.map(ct => ct.teacher?.name).filter(Boolean) as string[],
+        skipDates: c.skip_dates ?? [],
       })))
       setLoading(false)
     })

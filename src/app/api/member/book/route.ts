@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
   const actor = `${actorProfile?.name || "會員"}（會員）`
   const { data: course } = await admin
     .from("courses")
-    .select("id, title, types, status, schedule, capacity, ticket_types")
+    .select("id, title, types, status, schedule, capacity, ticket_types, skip_dates")
     .eq("id", courseId)
     .maybeSingle()
   if (!course) return NextResponse.json({ error: "找不到課程" }, { status: 404 })
@@ -39,8 +39,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "課程目前未開放報名" }, { status: 400 })
   }
 
-  // 日期必須是班表接下來的場次
-  const valid = new Set(upcomingSessions(course.schedule, 60).map(s => s.date))
+  // 日期必須是班表接下來的場次（停課日期不可報名）
+  const valid = new Set(upcomingSessions(course.schedule, 60, new Date(), (course.skip_dates ?? []) as string[]).map(s => s.date))
   for (const d of dates) {
     if (!valid.has(d)) return NextResponse.json({ error: `${d} 不是此課程的開課日` }, { status: 400 })
   }

@@ -41,6 +41,7 @@ type CourseLite = {
   schedule: string
   studio: string
   teacherIds: string[]
+  skipDates: string[]
 }
 
 type AttendanceLite = { course_id: string; records: { status: string }[] }
@@ -64,7 +65,7 @@ function TeacherCalendarModal({ teacher, courses, onClose }: {
   const schedule = useMemo(() => mergeMonthEvents(
     courses
       .filter(c => c.teacherIds.includes(teacher.id))
-      .map(c => expandScheduleToMonth(c.schedule, c.title, c.studio, year, month))
+      .map(c => expandScheduleToMonth(c.schedule, c.title, c.studio, year, month, c.skipDates))
   ), [courses, teacher.id, year, month])
 
   const firstDay = new Date(year, month, 1).getDay()
@@ -239,18 +240,20 @@ export default function TeachersPage() {
     const now = new Date()
     Promise.all([
       supabase.from("teachers").select("*").order("created_at"),
-      supabase.from("courses").select("id, title, schedule, classroom:classrooms(name), course_teachers(teacher_id)"),
+      supabase.from("courses").select("id, title, schedule, skip_dates, classroom:classrooms(name), course_teachers(teacher_id)"),
       supabase.from("course_attendance").select("course_id, records"),
     ]).then(([tRes, cRes, aRes]) => {
       if (cRes.error) console.error("載入課程失敗:", cRes.error.message)
       const courseList: CourseLite[] = ((cRes.data ?? []) as unknown as {
         id: string; title: string; schedule: string
+        skip_dates: string[] | null
         classroom: { name: string } | null
         course_teachers: { teacher_id: string }[]
       }[]).map(c => ({
         id: c.id, title: c.title, schedule: c.schedule,
         studio: c.classroom?.name ?? "",
         teacherIds: c.course_teachers.map(ct => ct.teacher_id),
+        skipDates: c.skip_dates ?? [],
       }))
       setCourses(courseList)
 
@@ -259,7 +262,7 @@ export default function TeachersPage() {
       if (tRes.error) console.error("載入教師失敗:", tRes.error.message)
       else setTeachers((tRes.data as TeacherRow[]).map(r => {
         const mine = courseList.filter(c => c.teacherIds.includes(r.id))
-        const monthly = mine.reduce((n, c) => n + countMonthOccurrences(c.schedule, now.getFullYear(), now.getMonth()), 0)
+        const monthly = mine.reduce((n, c) => n + countMonthOccurrences(c.schedule, now.getFullYear(), now.getMonth(), c.skipDates), 0)
         const myCourseIds = new Set(mine.map(c => c.id))
         const records = attendance.filter(a => myCourseIds.has(a.course_id)).flatMap(a => a.records)
         const rate = records.length === 0 ? 100

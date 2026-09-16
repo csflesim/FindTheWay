@@ -11,12 +11,12 @@ export async function GET(req: NextRequest) {
   const admin = createAdminClient()
   const { data: course } = await admin
     .from("courses")
-    .select("id, schedule, capacity, types")
+    .select("id, schedule, capacity, types, skip_dates")
     .eq("id", courseId)
     .maybeSingle()
   if (!course) return NextResponse.json({ error: "找不到課程" }, { status: 404 })
 
-  const sessions = upcomingSessions(course.schedule, 8)
+  const sessions = upcomingSessions(course.schedule, 8, new Date(), (course.skip_dates ?? []) as string[])
   if (sessions.length === 0) return NextResponse.json({ sessions: [] })
 
   const { data: bound } = await admin

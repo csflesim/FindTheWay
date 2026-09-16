@@ -7,13 +7,14 @@ import { syncCourseEnrollment } from "@/lib/workflow-engine"
 // 後台卡券人工操作：
 // - extend：人工延期（在原效期上加 N 天；已過期則從今天起算）——過期棄權的券可救回
 // - restore：人工回復——已使用（含缺席核銷）退回未使用、已預約解除綁定退回未使用
+// - redeem：人工核銷——補登舊紀錄用（實際已上過課的券直接標已使用）
 export async function POST(req: NextRequest) {
   const staff = await requireStaffUser()
   if (!staff) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
   const actor = `${staff.name}（後台）`
 
-  const { ticketId, action, days } = await req.json() as {
-    ticketId?: string; action?: "extend" | "restore"; days?: number
+  const { ticketId, action, days, note } = await req.json() as {
+    ticketId?: string; action?: "extend" | "restore" | "redeem"; days?: number; note?: string
   }
   if (!ticketId || !action) return NextResponse.json({ error: "參數不完整" }, { status: 400 })
 
@@ -42,6 +43,22 @@ export async function POST(req: NextRequest) {
     }).eq("id", ticketId)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ ok: true, expiresAt: newExpiry })
+  }
+
+  // redeem：人工核銷（未使用/已預約 → 已使用），補登實際已上過的舊券
+  if (action === "redeem") {
+    if (t.status !== "未使用" && t.status !== "待使用") {
+      return NextResponse.json({ error: "只有未使用或已預約的券能核銷" }, { status: 400 })
+    }
+    const courseId = t.course_id
+    const { error } = await admin.from("tickets").update({
+      status: "已使用",
+      used_at: new Date().toISOString(),
+      history: withEvent(t.history, "人工核銷", note?.trim() || "補登紀錄", actor),
+    }).eq("id", ticketId)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (courseId) await syncCourseEnrollment(courseId)
+    return NextResponse.json({ ok: true })
   }
 
   // restore：退回未使用

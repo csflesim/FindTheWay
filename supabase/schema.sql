@@ -188,6 +188,7 @@ create table public.courses (
   capacity     int not null default 8,
   enrolled     int not null default 0,
   ticket_types text[] not null default '{}',       -- 可使用的課堂券別
+  skip_dates  jsonb not null default '[]',  -- 停課日期 ["YYYY-MM-DD"]，展開場次時排除
   unit_id      uuid references public.units(id) on delete set null,  -- 外部合作單位
   sub_unit     text,
   location     text,
