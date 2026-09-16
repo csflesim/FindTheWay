@@ -396,6 +396,13 @@ export default function OrdersPage() {
         <OrderDetail
           order={detail}
           onClose={() => setDetail(null)}
+          onTicketChanged={async () => {
+            const fresh = await refetchOrder(detail.id)
+            if (fresh) {
+              setOrders(prev => prev.map(o => o.id === detail.id ? fresh : o))
+              setDetail(fresh)
+            }
+          }}
           onConfirm={detail.payStatus === "待確認" ? (method) => confirmPayment(detail, method) : undefined}
           onCancel={detail.payStatus === "待確認" ? () => cancelOrder(detail.id) : undefined}
           onInitiateAfterSales={

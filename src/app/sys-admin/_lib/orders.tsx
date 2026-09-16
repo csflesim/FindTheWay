@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from "react"
+import { TicketDrawer } from "./TicketDrawer"
 import { X } from "lucide-react"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
@@ -222,15 +223,17 @@ function InfoRow({ label, value, bold }: { label: string; value: string; bold?: 
   )
 }
 
-export function OrderDetail({ order, onClose, onConfirm, onCancel, onInitiateAfterSales }: {
+export function OrderDetail({ order, onClose, onConfirm, onCancel, onInitiateAfterSales, onTicketChanged }: {
   order: Order
   onClose: () => void
   onConfirm?: (method: string) => void
   onCancel?: () => void
   onInitiateAfterSales?: () => void
+  onTicketChanged?: () => void   // 券被人工操作（核銷/延期/退回）後通知父層刷新
 }) {
   const [methodDraft, setMethodDraft] = useState(order.payMethod ?? "銀行轉帳")
   const [step, setStep] = useState<"view" | "confirm" | "cancel">("view")
+  const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null)
 
   const useStatus = getUseStatus(order)
   const usedCount = order.tickets.filter(t => t.status === "已使用").length
@@ -326,19 +329,30 @@ export function OrderDetail({ order, onClose, onConfirm, onCancel, onInitiateAft
               </div>
               <div className="divide-y divide-[#fafaf9]">
                 {order.tickets.map(t => (
-                  <div key={t.no} className="grid grid-cols-[1.4fr_1.2fr_1fr_1fr] items-center px-4 py-2.5">
-                    <p className="text-xs font-mono text-[#555]">{t.no}</p>
+                  <button key={t.no} onClick={() => setSelectedTicket(t)}
+                    className="grid grid-cols-[1.4fr_1.2fr_1fr_1fr] items-center px-4 py-2.5 w-full text-left hover:bg-[#fafaf9] transition-colors">
+                    <p className="text-xs font-mono text-[#555] underline underline-offset-2 decoration-[#e0e0e0]">{t.no}</p>
                     <span className={`text-[10px] px-1.5 py-0.5 rounded-full w-fit whitespace-nowrap ${ticketLabelStyle(t)}`}>
                       {ticketLabel(t)}
                     </span>
                     <p className="text-xs text-[#999]">{t.usedAt ?? "—"}</p>
                     <p className="text-xs text-[#999]">{t.expiresAt ?? "—"}</p>
-                  </div>
+                  </button>
                 ))}
               </div>
+              <p className="px-4 py-2 text-[10px] text-[#bbb] border-t border-[#fafaf9]">點券號可查看歷程並進行人工核銷／延期／退回</p>
             </div>
           )}
         </div>
+
+        {selectedTicket && (
+          <TicketDrawer
+            ticket={selectedTicket}
+            order={order}
+            onClose={() => setSelectedTicket(null)}
+            onChanged={() => onTicketChanged?.()}
+          />
+        )}
 
         {/* Footer */}
         <div className="px-6 py-4 border-t border-[#f0f0f0] shrink-0">
